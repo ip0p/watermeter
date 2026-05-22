@@ -61,7 +61,7 @@ services:
 ```
 
 4. Deploy the stack.
-5. Initialize the mounted data directory (`/opt/watermeter-data`):
+5. Initialize the mounted data directory (`/opt/watermeter-data`) from the repository root:
 
 ```bash
 sudo mkdir -p /opt/watermeter-data
