@@ -46,7 +46,7 @@ The published image is built for both `linux/amd64` and `linux/arm64` (Raspberry
 
 1. Go to **Stacks** → **Add stack**.
 2. Set stack name to `watermeter`.
-3. Paste the compose content from `/tmp/workspace/ip0p/watermeter/docker-compose.portainer.yml`:
+3. Paste the compose content from `docker-compose.portainer.yml` in the repository root:
 
 ```yaml
 services:
@@ -65,7 +65,7 @@ services:
 
 ```bash
 sudo mkdir -p /opt/watermeter-data
-sudo cp /tmp/workspace/ip0p/watermeter/config-example.json /opt/watermeter-data/config.json
+sudo cp config-example.json /opt/watermeter-data/config.json
 cat <<'JSON' | sudo tee /opt/watermeter-data/settings.json >/dev/null
 {
   "imageUrl": "http://camera/snapshot.jpg",
