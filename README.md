@@ -14,51 +14,90 @@ This project processes an image of your water meter, crops and corrects it based
 * ⚙️ Configurable for different meter layouts via a JSON config file.
 * 🧮 Includes **sanity checking**: ensures readings are consistent and realistic.
 * 🐳 Easily run anywhere via **Docker**, no Python setup required.
+* 🌐 Built-in **web UI** and **REST API** for easy configuration and on-demand readings.
 
 ---
 
-## 🔧 General setup
-
-This tool is intended to run in a minutely cronjob. 
-
-This cronjob should first download an image from your camera.
-
-If you have an RTSP stream you can use ffmpeg to take a picture from it:
-```sh
-ffmpeg -rtsp_transport tcp -i "rtsp://RTSP_STREAM_URL" -frames:v 1 -update 1 -q:v 2 -y /output/path/for/image.png
-```
-
-Then the cron job should process the camera image with this tool. The resulting value file can be copied into a webroot for further processing.
-
----
-
-## 🧩 Example Configuration
-
-Create a file named `config.json` based off the [configration example in this repository](./config-example.json). Also create a `value.txt` file with your current meter reading for context aware parsing.
-
----
-
-## ⚙️ Configuration Explained
-
-| Section             | Key            | Description                                                                                                                                     |
-| ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **sanity**          | `maxThreshold` | Maximum allowed increase in readings between runs (e.g., `0.2` means next reading can’t jump by more than 0.2 m³). Prevents OCR mistakes.       |
-| **image**           | `rotate`       | Rotates the image (in degrees) to align the meter horizontally.                                                                                 |
-|                     | `crop`         | Defines the rectangular region containing the entire meter display. Coordinates are relative to the original image.                             |
-| **digits**          | list           | Each entry defines the x/y coordinates and width/height of an individual digit field in the main counter.                                       |
-| **decimal_digits**  | list           | Optional fields for fractional digits (if present on your meter). Empty in this example.                                                        |
-| **decimal_analogs** | list           | Circular or analog dials representing decimal fractions. Each field defines the area to analyze and its color channel (`red`, `green`, `blue`). |
-| **postprocessing**  | `digits`       | Adjust brightness and contrast to improve OCR results for the main digits. Values are percentages (`-30` = darker, `40` = more contrast).       |
-|                     | `analog`       | Same as above, but for analog (dial) sections. `binaryThreshold` defines the grayscale threshold used for detecting pointer position.           |
-
----
-
-## 🐳 Run via Docker
-
-Once you have your image and configuration ready, you can run the detector in one simple command:
+## 🐳 Run via Docker (Web UI + REST API)
 
 ```bash
-docker run --rm -v $PWD:/app/data ghcr.io/scjona/watermeter run \
+docker run -d \
+  --name watermeter \
+  -p 5000:5000 \
+  -v $PWD/data:/data \
+  ghcr.io/ip0p/watermeter
+```
+
+Then open **http://localhost:5000** in your browser.
+
+The `/data` volume holds:
+
+| File | Description |
+|---|---|
+| `config.json` | Meter image processing config (crop, rotation, digit positions) |
+| `settings.json` | App settings (image URL, max threshold) |
+| `value.txt` | Last known meter reading (used for sanity checks) |
+
+---
+
+## 🌐 Web Interface
+
+Open `http://localhost:5000` to access the web UI:
+
+* **Dashboard** — Shows the current reading and a "Read Now" button. Displays the annotated debug image after each read.
+* **Settings** — Configure the image snapshot URL and max threshold.
+* **Processor Config** — Edit `config.json` directly in the browser.
+
+---
+
+## 🔌 REST API
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/value` | Return the last stored meter reading |
+| `POST` | `/api/read` | Fetch image from configured URL, run OCR, return reading + debug image |
+| `GET` | `/api/settings` | Return current app settings |
+| `PUT` | `/api/settings` | Update app settings |
+| `GET` | `/api/config` | Return current processor config |
+| `PUT` | `/api/config` | Update processor config |
+
+### `POST /api/read`
+
+You may optionally override the image URL per request:
+
+```json
+{ "imageUrl": "http://camera/snapshot.jpg" }
+```
+
+Response:
+
+```json
+{
+  "value": 12345.1234,
+  "previous": 12345.0000,
+  "debugImage": "data:image/jpeg;base64,..."
+}
+```
+
+On error (sanity check failure, fetch error, etc.) an HTTP 4xx/5xx is returned:
+
+```json
+{ "error": "Result 12345.0 is less than previous 12345.1" }
+```
+
+---
+
+## 🔧 General setup (cron / headless)
+
+This tool can also run in a minutely cronjob in CLI mode (backward-compatible):
+
+```bash
+# Download a frame from an RTSP stream
+ffmpeg -rtsp_transport tcp -i "rtsp://RTSP_STREAM_URL" -frames:v 1 -update 1 -q:v 2 -y /output/path/for/image.png
+
+# Process it
+docker run --rm -v $PWD:/app/data ghcr.io/ip0p/watermeter \
+  python __main__.py run \
   --image data/image.png \
   --config data/config.json \
   --value data/result.txt
@@ -66,25 +105,24 @@ docker run --rm -v $PWD:/app/data ghcr.io/scjona/watermeter run \
 
 ---
 
-## 🗂️ File Mappings Explained (for Docker Beginners)
+## 🧩 Example Configuration
 
-Docker containers run in their own isolated filesystem.
-The `-v $PWD:/app/data` flag **mounts** your current folder into the container.
+Create a file named `config.json` based off the [configuration example in this repository](./config-example.json). Also create a `value.txt` file with your current meter reading for context aware parsing.
 
-So inside the container:
+---
 
-* `data/image.png` → your input photo of the meter
-* `data/config.json` → your configuration file (like above)
-* `data/result.txt` → output file containing the recognized reading
+## ⚙️ Configuration Explained
 
-**Example:**
-If you are running this command in `/home/user/watermeter/`, then this will be the file mapping:
-
-```
-/home/user/watermeter/image.png      # input image
-/home/user/watermeter/config.json    # config
-/home/user/watermeter/result.txt     # output created here
-```
+| Section             | Key            | Description                                                                                                                                     |
+| ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **sanity**          | `maxThreshold` | Maximum allowed increase in readings between runs (e.g., `0.2` means next reading can't jump by more than 0.2 m³). Prevents OCR mistakes.       |
+| **image**           | `rotate`       | Rotates the image (in degrees) to align the meter horizontally.                                                                                 |
+|                     | `crop`         | Defines the rectangular region containing the entire meter display. Coordinates are relative to the original image.                             |
+| **digits**          | list           | Each entry defines the x/y coordinates and width/height of an individual digit field in the main counter.                                       |
+| **decimal_digits**  | list           | Optional fields for fractional digits (if present on your meter). Empty in this example.                                                        |
+| **decimal_analogs** | list           | Circular or analog dials representing decimal fractions. Each field defines the area to analyze and its color channel (`red`, `green`, `blue`). |
+| **postprocessing**  | `digits`       | Adjust brightness and contrast to improve OCR results for the main digits. Values are percentages (`-30` = darker, `40` = more contrast).       |
+|                     | `analog`       | Same as above, but for analog (dial) sections. `binaryThreshold` defines the grayscale threshold used for detecting pointer position.           |
 
 ---
 
@@ -98,13 +136,13 @@ This version uses [**EasyOCR**](https://github.com/JaidedAI/EasyOCR), which is b
 
 ## 🧠 Context-Aware Parsing
 
-Reading analog water meters isn’t always straightforward - small perspective distortions, glare, or dial overlaps can cause subtle OCR errors.
+Reading analog water meters isn't always straightforward - small perspective distortions, glare, or dial overlaps can cause subtle OCR errors.
 To improve accuracy, this project uses **context-aware logic** that considers relationships between multiple readings instead of treating each digit or dial in isolation.
 
 ### 🔹 Analog Dial Correction
 
 For meters with several rotating dials (the *decimal_analogs* section in your config), the system compares the detected pointer angles across all dials.
-Because analog dials are mechanically linked, a small offset on one dial (e.g., the pointer slightly before or after a number) can be corrected by analyzing the adjacent dials’ positions.
+Because analog dials are mechanically linked, a small offset on one dial (e.g., the pointer slightly before or after a number) can be corrected by analyzing the adjacent dials' positions.
 This significantly reduces false readings caused by:
 
 * Camera perspective skew
@@ -132,5 +170,8 @@ If you prefer to run it locally (without Docker):
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+python web_server.py          # starts web UI on http://localhost:5000
+# or
 python main.py run --image tests/0001.png --config tests/0001.json --value tests/0001.txt
 ```
+

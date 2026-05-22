@@ -29,5 +29,11 @@ ENV PYTHONUNBUFFERED=1
 # download EasyOCR detection models
 RUN python __main__.py init
 
-# Default command
-ENTRYPOINT ["python", "__main__.py"]
+# Persistent data volume (config.json, settings.json, value.txt)
+VOLUME ["/data"]
+
+EXPOSE 5000
+
+# Default command: run web server
+# To use the CLI instead: docker run --rm ... python __main__.py run ...
+ENTRYPOINT ["python", "web_server.py"]

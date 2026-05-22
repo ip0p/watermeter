@@ -15,12 +15,27 @@ def get_ocr():
     return ocr
 
 class ImageProcessor:
-    def __init__(self, image_path: str, config_path: str):
-        self.image_path = image_path
-        self.config_path = config_path
-        self.img = cv2.imread(image_path)
-        with open(config_path, "r") as config_file:
-            self.config = json.load(config_file)
+    def __init__(self, image_source, config_source):
+        """
+        image_source: path to an image file (str) OR raw image bytes.
+        config_source: path to a JSON config file (str) OR a dict.
+        """
+        if isinstance(image_source, (bytes, bytearray)):
+            arr = np.frombuffer(image_source, dtype=np.uint8)
+            self.img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            self.image_path = None
+        else:
+            self.image_path = image_source
+            self.img = cv2.imread(image_source)
+
+        if isinstance(config_source, dict):
+            self.config = config_source
+            self.config_path = None
+        else:
+            self.config_path = config_source
+            with open(config_source, "r") as config_file:
+                self.config = json.load(config_file)
+
         if self.img is None:
             raise ValueError("Image not found")
 

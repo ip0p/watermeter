@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WaterMeter</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <style>
+    body { background: #f4f6f9; }
+    .card { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    #debugImg { max-width: 100%; border-radius: 6px; margin-top: 1rem; }
+    .value-display { font-size: 3rem; font-weight: 700; color: #0d6efd; }
+    #alertBox { display: none; }
+    #configEditor, #settingsForm { font-family: monospace; }
+  </style>
+</head>
+<body>
+<div class="container py-4">
+  <h1 class="mb-1">💧 WaterMeter</h1>
+  <p class="text-muted mb-4">Water meter reading via EasyOCR</p>
+
+  <div id="alertBox" class="alert" role="alert"></div>
+
+  <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-dashboard">Dashboard</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-settings">Settings</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-config">Processor Config</button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- DASHBOARD -->
+    <div class="tab-pane fade show active" id="tab-dashboard">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card p-4 text-center">
+            <div class="text-muted mb-1">Current Reading</div>
+            <div class="value-display" id="currentValue">—</div>
+            <div class="text-muted">m³</div>
+            <button class="btn btn-primary mt-3" id="btnRead" onclick="doRead()">
+              <span id="btnReadSpinner" class="spinner-border spinner-border-sm d-none me-2"></span>
+              Read Now
+            </button>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card p-4">
+            <div class="text-muted mb-2">Last debug image</div>
+            <img id="debugImg" src="" alt="" style="display:none" />
+            <div id="noDebug" class="text-muted small">No image yet — press "Read Now"</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="tab-pane fade" id="tab-settings">
+      <div class="card p-4" style="max-width:540px">
+        <h5 class="mb-3">Settings</h5>
+        <form id="settingsForm" onsubmit="saveSettings(event)">
+          <div class="mb-3">
+            <label class="form-label">Image URL</label>
+            <input type="url" class="form-control" id="imageUrl" placeholder="http://camera/snapshot.jpg" />
+            <div class="form-text">HTTP(S) URL of the snapshot to fetch for each reading.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Max Threshold (m³)</label>
+            <input type="number" step="0.01" class="form-control" id="maxThreshold" placeholder="0.2" />
+            <div class="form-text">Maximum allowed increase between two consecutive readings.</div>
+          </div>
+          <button type="submit" class="btn btn-success">Save Settings</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- CONFIG -->
+    <div class="tab-pane fade" id="tab-config">
+      <div class="card p-4">
+        <h5 class="mb-3">Processor Config (config.json)</h5>
+        <p class="text-muted small">Defines crop, rotation, digit positions, and post-processing for the meter image.</p>
+        <textarea class="form-control" id="configEditor" rows="28" spellcheck="false"></textarea>
+        <div class="mt-2 d-flex gap-2">
+          <button class="btn btn-success" onclick="saveConfig()">Save Config</button>
+          <button class="btn btn-outline-secondary" onclick="loadConfig()">Reload</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  function showAlert(msg, type = "danger") {
+    const el = document.getElementById("alertBox");
+    el.className = `alert alert-${type}`;
+    el.textContent = msg;
+    el.style.display = "block";
+    setTimeout(() => { el.style.display = "none"; }, 5000);
+  }
+
+  async function loadValue() {
+    try {
+      const r = await fetch("/api/value");
+      const d = await r.json();
+      document.getElementById("currentValue").textContent =
+        d.value !== null && d.value !== undefined ? d.value.toFixed(4) : "—";
+    } catch (e) { /* ignore */ }
+  }
+
+  async function loadSettings() {
+    try {
+      const r = await fetch("/api/settings");
+      const d = await r.json();
+      document.getElementById("imageUrl").value = d.imageUrl || "";
+      document.getElementById("maxThreshold").value = d.maxThreshold ?? 0.2;
+    } catch (e) { showAlert("Failed to load settings: " + e); }
+  }
+
+  async function saveSettings(e) {
+    e.preventDefault();
+    const payload = {
+      imageUrl: document.getElementById("imageUrl").value.trim(),
+      maxThreshold: parseFloat(document.getElementById("maxThreshold").value),
+    };
+    try {
+      const r = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || "Unexpected server error");
+      }
+      showAlert("Settings saved.", "success");
+    } catch (e) { showAlert("Save failed: " + e.message); }
+  }
+
+  async function loadConfig() {
+    try {
+      const r = await fetch("/api/config");
+      const d = await r.json();
+      document.getElementById("configEditor").value = JSON.stringify(d, null, 2);
+    } catch (e) { showAlert("Failed to load config: " + e); }
+  }
+
+  async function saveConfig() {
+    let parsed;
+    try {
+      parsed = JSON.parse(document.getElementById("configEditor").value);
+    } catch (e) {
+      showAlert("Invalid JSON: " + e.message);
+      return;
+    }
+    try {
+      const r = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || "Unexpected server error");
+      }
+      showAlert("Config saved.", "success");
+    } catch (e) { showAlert("Save failed: " + e.message); }
+  }
+
+  async function doRead() {
+    const btn = document.getElementById("btnRead");
+    const spinner = document.getElementById("btnReadSpinner");
+    btn.disabled = true;
+    spinner.classList.remove("d-none");
+    try {
+      const r = await fetch("/api/read", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) {
+        showAlert("Error: " + (d.error || r.statusText));
+      } else {
+        document.getElementById("currentValue").textContent = d.value.toFixed(4);
+        showAlert(`Reading: ${d.value.toFixed(4)} m³`, "success");
+        if (d.debugImage) {
+          const img = document.getElementById("debugImg");
+          img.src = d.debugImage;
+          img.style.display = "block";
+          document.getElementById("noDebug").style.display = "none";
+        }
+      }
+    } catch (e) {
+      showAlert("Request failed: " + e);
+    } finally {
+      btn.disabled = false;
+      spinner.classList.add("d-none");
+    }
+  }
+
+  // Bootstrap tab change — lazy-load data
+  document.querySelectorAll('[data-bs-toggle="tab"]').forEach(btn => {
+    btn.addEventListener("shown.bs.tab", e => {
+      const target = e.target.getAttribute("data-bs-target");
+      if (target === "#tab-settings") loadSettings();
+      if (target === "#tab-config") loadConfig();
+    });
+  });
+
+  // Initial load
+  loadValue();
+</script>
+</body>
+</html>
