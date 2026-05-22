@@ -1,7 +1,9 @@
 import base64
 import io
 import json
+import logging
 import os
+from urllib.parse import urlparse
 
 import requests
 from flask import Flask, jsonify, request, send_from_directory
@@ -9,6 +11,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from image_processor import ImageProcessor, get_ocr
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+logger = logging.getLogger(__name__)
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
@@ -130,12 +133,18 @@ def post_read():
     if max_threshold is not None:
         config.setdefault("sanity", {})["maxThreshold"] = max_threshold
 
+    # Validate URL scheme to prevent SSRF (only http/https allowed)
+    parsed = urlparse(image_url)
+    if parsed.scheme not in ("http", "https"):
+        return jsonify({"error": "imageUrl must use http or https"}), 400
+
     # Fetch image
     try:
         resp = requests.get(image_url, timeout=15)
         resp.raise_for_status()
-    except Exception as exc:
-        return jsonify({"error": f"Failed to fetch image: {exc}"}), 502
+    except requests.exceptions.RequestException as exc:
+        logger.warning("Failed to fetch image from %s: %s", image_url, exc)
+        return jsonify({"error": "Failed to fetch image from the configured URL"}), 502
 
     image_bytes = resp.content
 
@@ -148,7 +157,8 @@ def post_read():
         ip = ImageProcessor(image_bytes, config)
         result = ip.process(previous, debug=debug_path)
     except Exception as exc:
-        return jsonify({"error": f"Processing failed: {exc}"}), 500
+        logger.exception("Processing failed")
+        return jsonify({"error": "Image processing failed"}), 500
 
     if result is None:
         return jsonify({"error": "Could not parse image"}), 422
