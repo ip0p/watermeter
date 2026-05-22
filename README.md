@@ -42,6 +42,50 @@ The published image is built for both `linux/amd64` and `linux/arm64` (Raspberry
 
 ---
 
+## 🧭 Deploy in Portainer (Stack)
+
+1. Go to **Stacks** → **Add stack**.
+2. Set stack name to `watermeter`.
+3. Paste the compose content from `/tmp/workspace/ip0p/watermeter/docker-compose.portainer.yml`:
+
+```yaml
+services:
+  watermeter:
+    image: ghcr.io/ip0p/watermeter:latest
+    container_name: watermeter
+    ports:
+      - "5000:5000"
+    volumes:
+      - /opt/watermeter-data:/data
+    restart: unless-stopped
+```
+
+4. Deploy the stack.
+5. Initialize the mounted data directory (`/opt/watermeter-data`):
+
+```bash
+sudo mkdir -p /opt/watermeter-data
+sudo cp /tmp/workspace/ip0p/watermeter/config-example.json /opt/watermeter-data/config.json
+cat <<'JSON' | sudo tee /opt/watermeter-data/settings.json >/dev/null
+{
+  "imageUrl": "http://camera/snapshot.jpg",
+  "maxThreshold": 0.2
+}
+JSON
+echo "12345.0000" | sudo tee /opt/watermeter-data/value.txt >/dev/null
+```
+
+6. Open `http://<your-server>:5000`, then check/save **Settings** and **Processor Config**.
+7. Test with **Read Now** or via API:
+
+```bash
+curl -X POST http://<your-server>:5000/api/read \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+---
+
 ## 🌐 Web Interface
 
 Open `http://localhost:5000` to access the web UI:
