@@ -20,14 +20,16 @@ CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
 VALUE_PATH = os.path.join(DATA_DIR, "value.txt")
 
+DEFAULT_MAX_THRESHOLD = 0.2
+
 DEFAULT_SETTINGS = {
     "imageUrl": "",
-    "maxThreshold": 0.2,
+    "maxThreshold": DEFAULT_MAX_THRESHOLD,
 }
 
 DEFAULT_CONFIG = {
     "sanity": {
-        "maxThreshold": 0.2
+        "maxThreshold": DEFAULT_MAX_THRESHOLD
     },
     "image": {
         "rotate": 0,
