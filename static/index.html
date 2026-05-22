@@ -12,6 +12,15 @@
     .value-display { font-size: 3rem; font-weight: 700; color: #0d6efd; }
     #alertBox { display: none; }
     #configEditor, #settingsForm { font-family: monospace; }
+    #configCanvas {
+      width: 100%;
+      max-width: 100%;
+      border: 1px solid #ced4da;
+      border-radius: 6px;
+      background: #fff;
+      cursor: crosshair;
+    }
+    #selectionInfo { min-height: 1.25rem; }
   </style>
 </head>
 <body>
@@ -84,10 +93,32 @@
       <div class="card p-4">
         <h5 class="mb-3">Processor Config (config.json)</h5>
         <p class="text-muted small">Defines crop, rotation, digit positions, and post-processing for the meter image.</p>
-        <textarea class="form-control" id="configEditor" rows="28" spellcheck="false"></textarea>
-        <div class="mt-2 d-flex gap-2">
-          <button class="btn btn-success" onclick="saveConfig()">Save Config</button>
-          <button class="btn btn-outline-secondary" onclick="loadConfig()">Reload</button>
+        <div class="row g-3">
+          <div class="col-lg-6">
+            <textarea class="form-control" id="configEditor" rows="28" spellcheck="false"></textarea>
+            <div class="mt-2 d-flex gap-2">
+              <button class="btn btn-success" onclick="saveConfig()">Save Config</button>
+              <button class="btn btn-outline-secondary" onclick="loadConfig()">Reload</button>
+            </div>
+          </div>
+          <div class="col-lg-6">
+            <div class="border rounded p-3 bg-light">
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <button class="btn btn-outline-primary btn-sm" id="btnLoadEditorImage" onclick="loadEditorImage(true)">Load image (Read now)</button>
+                <label class="form-label mb-0 ms-1">Target</label>
+                <select class="form-select form-select-sm" id="editorTarget" style="width:auto">
+                  <option value="digits">digits</option>
+                  <option value="decimal_digits">decimal_digits</option>
+                  <option value="decimal_analogs">decimal_analogs</option>
+                </select>
+                <label class="form-label mb-0 ms-1">Index</label>
+                <input type="number" class="form-control form-control-sm" id="editorIndex" min="0" value="0" style="width:85px" />
+                <button class="btn btn-primary btn-sm" onclick="applySelectionToConfig()">Apply selection</button>
+              </div>
+              <div id="selectionInfo" class="small text-muted mb-2">Load an image and drag on the canvas to define a rectangle.</div>
+              <canvas id="configCanvas" width="1" height="1"></canvas>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -97,6 +128,189 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+  let currentConfig = null;
+  let editorImage = null;
+  let isDrawing = false;
+  let drawStart = null;
+  let currentSelection = null;
+
+  function getConfigFromEditor() {
+    try {
+      return JSON.parse(document.getElementById("configEditor").value);
+    } catch {
+      return null;
+    }
+  }
+
+  function setConfigEditorValue(config) {
+    currentConfig = config;
+    document.getElementById("configEditor").value = JSON.stringify(config, null, 2);
+    updateEditorIndexBounds();
+    renderEditorCanvas();
+  }
+
+  function getCanvasPoint(e) {
+    const canvas = document.getElementById("configCanvas");
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return { x: 0, y: 0 };
+    const x = (e.clientX - rect.left) * canvas.width / rect.width;
+    const y = (e.clientY - rect.top) * canvas.height / rect.height;
+    return {
+      x: Math.max(0, Math.min(canvas.width, x)),
+      y: Math.max(0, Math.min(canvas.height, y)),
+    };
+  }
+
+  function normalizeRect(a, b) {
+    const x1 = Math.min(a.x, b.x);
+    const y1 = Math.min(a.y, b.y);
+    const x2 = Math.max(a.x, b.x);
+    const y2 = Math.max(a.y, b.y);
+    return {
+      x: Math.round(x1),
+      y: Math.round(y1),
+      width: Math.max(1, Math.round(x2 - x1)),
+      height: Math.max(1, Math.round(y2 - y1)),
+    };
+  }
+
+  function getSelectedTargetConfig() {
+    const target = document.getElementById("editorTarget").value;
+    const idx = Math.max(0, parseInt(document.getElementById("editorIndex").value || "0", 10));
+    return { target, idx };
+  }
+
+  function updateSelectionInfo() {
+    const info = document.getElementById("selectionInfo");
+    if (!currentSelection) {
+      info.textContent = "Load an image and drag on the canvas to define a rectangle.";
+      return;
+    }
+    info.textContent = `Selection: x=${currentSelection.x}, y=${currentSelection.y}, width=${currentSelection.width}, height=${currentSelection.height}`;
+  }
+
+  function renderEditorCanvas() {
+    const canvas = document.getElementById("configCanvas");
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (editorImage) {
+      if (canvas.width !== editorImage.width || canvas.height !== editorImage.height) {
+        canvas.width = editorImage.width;
+        canvas.height = editorImage.height;
+      }
+      ctx.drawImage(editorImage, 0, 0, canvas.width, canvas.height);
+    } else {
+      canvas.width = 1;
+      canvas.height = 1;
+      return;
+    }
+
+    const cfg = currentConfig || getConfigFromEditor();
+    if (cfg) {
+      const { target, idx } = getSelectedTargetConfig();
+      const list = Array.isArray(cfg[target]) ? cfg[target] : [];
+      list.forEach((box, i) => {
+        if (!box || typeof box.x !== "number" || typeof box.y !== "number") return;
+        ctx.strokeStyle = i === idx ? "#ff9800" : "#0d6efd";
+        ctx.lineWidth = i === idx ? 3 : 2;
+        ctx.strokeRect(box.x, box.y, box.width || 0, box.height || 0);
+      });
+    }
+
+    if (currentSelection) {
+      ctx.strokeStyle = "#dc3545";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(currentSelection.x, currentSelection.y, currentSelection.width, currentSelection.height);
+      ctx.setLineDash([]);
+    }
+  }
+
+  async function loadEditorImage(forceRead = false) {
+    const btn = document.getElementById("btnLoadEditorImage");
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Loading...";
+    try {
+      let src = document.getElementById("debugImg").src;
+      if (forceRead || !src || !src.startsWith("data:image/")) {
+        const r = await fetch("/api/read", { method: "POST" });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || r.statusText);
+        if (!d.debugImage) throw new Error("No debug image received");
+        src = d.debugImage;
+        const debugImg = document.getElementById("debugImg");
+        debugImg.src = src;
+        debugImg.style.display = "block";
+        document.getElementById("noDebug").style.display = "none";
+        if (typeof d.value === "number") {
+          document.getElementById("currentValue").textContent = d.value.toFixed(4);
+        }
+      }
+
+      await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          editorImage = img;
+          resolve();
+        };
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = src;
+      });
+      renderEditorCanvas();
+      showAlert("Editor image loaded.", "success");
+    } catch (e) {
+      showAlert("Failed to load editor image: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  function updateEditorIndexBounds() {
+    const cfg = currentConfig || getConfigFromEditor();
+    const { target } = getSelectedTargetConfig();
+    const list = Array.isArray(cfg?.[target]) ? cfg[target] : [];
+    const input = document.getElementById("editorIndex");
+    const current = Math.max(0, parseInt(input.value || "0", 10));
+    input.max = Math.max(0, list.length);
+    if (current > list.length) {
+      input.value = String(list.length);
+    }
+  }
+
+  function applySelectionToConfig() {
+    if (!currentSelection) {
+      showAlert("Draw a rectangle on the image first.");
+      return;
+    }
+    let cfg = currentConfig || getConfigFromEditor();
+    if (!cfg) {
+      showAlert("Config JSON is invalid. Fix it first.");
+      return;
+    }
+
+    const { target, idx } = getSelectedTargetConfig();
+    if (!Array.isArray(cfg[target])) cfg[target] = [];
+    while (cfg[target].length <= idx) cfg[target].push({});
+
+    const next = {
+      x: currentSelection.x,
+      y: currentSelection.y,
+      width: currentSelection.width,
+      height: currentSelection.height,
+    };
+    if (cfg[target][idx].color) {
+      next.color = cfg[target][idx].color;
+    } else if (target === "decimal_analogs") {
+      next.color = "red";
+    }
+    cfg[target][idx] = next;
+    setConfigEditorValue(cfg);
+    showAlert(`Updated ${target}[${idx}] from selection.`, "success");
+  }
+
   function showAlert(msg, type = "danger") {
     const el = document.getElementById("alertBox");
     el.className = `alert alert-${type}`;
@@ -147,7 +361,7 @@
     try {
       const r = await fetch("/api/config");
       const d = await r.json();
-      document.getElementById("configEditor").value = JSON.stringify(d, null, 2);
+      setConfigEditorValue(d);
     } catch (e) { showAlert("Failed to load config: " + e); }
   }
 
@@ -169,6 +383,9 @@
         const d = await r.json().catch(() => ({}));
         throw new Error(d.error || "Unexpected server error");
       }
+      currentConfig = parsed;
+      updateEditorIndexBounds();
+      renderEditorCanvas();
       showAlert("Config saved.", "success");
     } catch (e) { showAlert("Save failed: " + e.message); }
   }
@@ -191,6 +408,9 @@
           img.src = d.debugImage;
           img.style.display = "block";
           document.getElementById("noDebug").style.display = "none";
+          if (document.getElementById("tab-config").classList.contains("active")) {
+            loadEditorImage(false);
+          }
         }
       }
     } catch (e) {
@@ -206,8 +426,63 @@
     btn.addEventListener("shown.bs.tab", e => {
       const target = e.target.getAttribute("data-bs-target");
       if (target === "#tab-settings") loadSettings();
-      if (target === "#tab-config") loadConfig();
+      if (target === "#tab-config") {
+        loadConfig();
+        const debugSrc = document.getElementById("debugImg").src;
+        if (debugSrc && debugSrc.startsWith("data:image/")) {
+          loadEditorImage(false);
+        }
+      }
     });
+  });
+
+  document.getElementById("configEditor").addEventListener("input", () => {
+    const parsed = getConfigFromEditor();
+    if (parsed) {
+      currentConfig = parsed;
+      updateEditorIndexBounds();
+      renderEditorCanvas();
+    }
+  });
+  document.getElementById("editorTarget").addEventListener("change", () => {
+    updateEditorIndexBounds();
+    renderEditorCanvas();
+  });
+  document.getElementById("editorIndex").addEventListener("input", () => {
+    updateEditorIndexBounds();
+    renderEditorCanvas();
+  });
+
+  const configCanvas = document.getElementById("configCanvas");
+  configCanvas.addEventListener("pointerdown", e => {
+    if (!editorImage) return;
+    isDrawing = true;
+    drawStart = getCanvasPoint(e);
+    currentSelection = { x: Math.round(drawStart.x), y: Math.round(drawStart.y), width: 0, height: 0 };
+    updateSelectionInfo();
+    renderEditorCanvas();
+  });
+  configCanvas.addEventListener("pointermove", e => {
+    if (!isDrawing || !drawStart) return;
+    const p = getCanvasPoint(e);
+    currentSelection = normalizeRect(drawStart, p);
+    updateSelectionInfo();
+    renderEditorCanvas();
+  });
+  configCanvas.addEventListener("pointerup", e => {
+    if (!isDrawing || !drawStart) return;
+    const p = getCanvasPoint(e);
+    currentSelection = normalizeRect(drawStart, p);
+    isDrawing = false;
+    drawStart = null;
+    updateSelectionInfo();
+    renderEditorCanvas();
+  });
+  configCanvas.addEventListener("pointerleave", () => {
+    if (isDrawing) {
+      isDrawing = false;
+      drawStart = null;
+    }
   });
 
   // Initial load

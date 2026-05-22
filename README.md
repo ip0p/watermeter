@@ -111,7 +111,7 @@ Open `http://localhost:5000` to access the web UI:
 
 * **Dashboard** — Shows the current reading and a "Read Now" button. Displays the annotated debug image after each read.
 * **Settings** — Configure the image snapshot URL and max threshold.
-* **Processor Config** — Edit `config.json` directly in the browser.
+* **Processor Config** — Edit `config.json` directly in the browser and use the built-in image editor (draw a rectangle on the image, pick target/index, apply selection).
 
 ---
 
@@ -178,7 +178,7 @@ Create a file named `config.json` based off the [configuration example in this r
 
 ## ⚙️ Configuration Explained
 
-> **Important:** The crop coordinates and digit positions are **not auto-detected** — they must be configured manually to match your specific meter layout. Use the **Processor Config** page in the web UI to edit `config.json`, and take a snapshot of your meter to determine the correct pixel positions for each field.
+> **Important:** The crop coordinates and digit positions are **not auto-detected** — they must be configured manually to match your specific meter layout. Use the **Processor Config** page in the web UI to edit `config.json`, load a debug image, then draw rectangles and apply them to the desired target/index fields.
 
 | Section             | Key            | Description                                                                                                                                     |
 | ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
