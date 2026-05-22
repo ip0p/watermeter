@@ -52,21 +52,44 @@ def _save_value(value):
         f.write(str(value))
 
 
-def _validate_image_url(url: str) -> str | None:
-    """Return an error string if the URL is not safe, otherwise None."""
+def _validate_image_url(url: str):
+    """
+    Validate the URL and return (resolved_ip: str, error: str | None).
+    Blocks non-http(s) schemes and private/reserved/multicast IPs to prevent SSRF.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        return "imageUrl must use http or https"
+        return None, "imageUrl must use http or https"
     hostname = parsed.hostname
     if not hostname:
-        return "imageUrl has no hostname"
+        return None, "imageUrl has no hostname"
     try:
-        addr = ipaddress.ip_address(socket.gethostbyname(hostname))
+        resolved = socket.gethostbyname(hostname)
+        addr = ipaddress.ip_address(resolved)
     except (socket.gaierror, ValueError):
-        return "Could not resolve imageUrl hostname"
-    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-        return "imageUrl resolves to a private or reserved address"
-    return None
+        return None, "Could not resolve imageUrl hostname"
+    if (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+    ):
+        return None, "imageUrl resolves to a private, reserved, or multicast address"
+    return resolved, None
+
+
+def _build_safe_url(original_url: str, resolved_ip: str) -> tuple[str, dict]:
+    """
+    Rewrite the URL to use the pre-resolved IP to prevent DNS rebinding.
+    Returns (rewritten_url, headers_with_host).
+    """
+    parsed = urlparse(original_url)
+    host_header = parsed.netloc  # preserve original host (with port) for the Host header
+    port = parsed.port
+    netloc = resolved_ip if port is None else f"{resolved_ip}:{port}"
+    rewritten = parsed._replace(netloc=netloc).geturl()
+    return rewritten, {"Host": host_header}
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +165,7 @@ def post_read():
     if not image_url:
         return jsonify({"error": "No imageUrl configured"}), 400
 
-    url_error = _validate_image_url(image_url)
+    resolved_ip, url_error = _validate_image_url(image_url)
     if url_error:
         return jsonify({"error": url_error}), 400
 
@@ -156,9 +179,11 @@ def post_read():
     if max_threshold is not None:
         config.setdefault("sanity", {})["maxThreshold"] = max_threshold
 
-    # Fetch image
+    # Fetch image using the pre-resolved IP to prevent DNS rebinding.
+    # Redirects are disabled to prevent redirect-based SSRF bypasses.
+    safe_url, extra_headers = _build_safe_url(image_url, resolved_ip)
     try:
-        resp = requests.get(image_url, timeout=15)
+        resp = requests.get(safe_url, timeout=10, allow_redirects=False, headers=extra_headers)
         resp.raise_for_status()
     except requests.exceptions.RequestException as exc:
         logger.warning("Failed to fetch image from %s: %s", image_url, exc)
