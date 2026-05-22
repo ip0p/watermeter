@@ -1,8 +1,10 @@
 import base64
+import ipaddress
 import io
 import json
 import logging
 import os
+import socket
 from urllib.parse import urlparse
 
 import requests
@@ -48,6 +50,23 @@ def _load_value():
 def _save_value(value):
     with open(VALUE_PATH, "w") as f:
         f.write(str(value))
+
+
+def _validate_image_url(url: str) -> str | None:
+    """Return an error string if the URL is not safe, otherwise None."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return "imageUrl must use http or https"
+    hostname = parsed.hostname
+    if not hostname:
+        return "imageUrl has no hostname"
+    try:
+        addr = ipaddress.ip_address(socket.gethostbyname(hostname))
+    except (socket.gaierror, ValueError):
+        return "Could not resolve imageUrl hostname"
+    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+        return "imageUrl resolves to a private or reserved address"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +142,10 @@ def post_read():
     if not image_url:
         return jsonify({"error": "No imageUrl configured"}), 400
 
+    url_error = _validate_image_url(image_url)
+    if url_error:
+        return jsonify({"error": url_error}), 400
+
     if not os.path.exists(CONFIG_PATH):
         return jsonify({"error": "No config.json found. Please configure the processor first."}), 400
 
@@ -132,11 +155,6 @@ def post_read():
     max_threshold = settings.get("maxThreshold")
     if max_threshold is not None:
         config.setdefault("sanity", {})["maxThreshold"] = max_threshold
-
-    # Validate URL scheme to prevent SSRF (only http/https allowed)
-    parsed = urlparse(image_url)
-    if parsed.scheme not in ("http", "https"):
-        return jsonify({"error": "imageUrl must use http or https"}), 400
 
     # Fetch image
     try:
