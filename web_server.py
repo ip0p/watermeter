@@ -25,6 +25,35 @@ DEFAULT_SETTINGS = {
     "maxThreshold": 0.2,
 }
 
+DEFAULT_CONFIG = {
+    "sanity": {
+        "maxThreshold": 0.2
+    },
+    "image": {
+        "rotate": 0,
+        "crop": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0
+        }
+    },
+    "digits": [],
+    "decimal_digits": [],
+    "decimal_analogs": [],
+    "postprocessing": {
+        "digits": {
+            "brightness": 0,
+            "contrast": 0
+        },
+        "analog": {
+            "brightness": 0,
+            "contrast": 0,
+            "binaryThreshold": 128
+        }
+    }
+}
+
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
@@ -107,9 +136,7 @@ def index():
 
 @app.get("/api/config")
 def get_config():
-    if not os.path.exists(CONFIG_PATH):
-        return jsonify({}), 200
-    return jsonify(_load_json(CONFIG_PATH, {}))
+    return jsonify(_load_json(CONFIG_PATH, dict(DEFAULT_CONFIG)))
 
 
 @app.put("/api/config")
@@ -169,10 +196,7 @@ def post_read():
     if url_error:
         return jsonify({"error": url_error}), 400
 
-    if not os.path.exists(CONFIG_PATH):
-        return jsonify({"error": "No config.json found. Please configure the processor first."}), 400
-
-    config = _load_json(CONFIG_PATH, {})
+    config = _load_json(CONFIG_PATH, dict(DEFAULT_CONFIG))
 
     # Merge maxThreshold from settings into config sanity section
     max_threshold = settings.get("maxThreshold")
