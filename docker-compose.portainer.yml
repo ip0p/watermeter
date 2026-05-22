@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   watermeter:
     image: ghcr.io/ip0p/watermeter:latest
@@ -7,5 +5,5 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - /opt/watermeter-data:/data
+      - ${WATERMETER_DATA_DIR:-/opt/watermeter-data}:/data
     restart: unless-stopped
