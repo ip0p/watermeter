@@ -79,7 +79,7 @@ echo "12345.0000" | sudo tee /opt/watermeter-data/value.txt >/dev/null
 ```
 
 Replace `12345.0000` with your current real meter value.
-Use a numeric value with a dot as decimal separator (for example `12345`, `12345.1`, or `12345.1234`).
+Use a numeric value; decimals are optional, and if used, separate them with a dot (for example `12345`, `12345.1`, or `12345.1234`).
 
 6. Open `http://<your-server>:5000`, then check/save **Settings** and **Processor Config**.
 7. Test with **Read Now** or via API:
