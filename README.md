@@ -25,7 +25,7 @@ docker run -d \
   --name watermeter \
   -p 5000:5000 \
   -v $PWD/data:/data \
-  ghcr.io/ip0p/watermeter
+  ghcr.io/ip0p/watermeter:latest
 ```
 
 Then open **http://localhost:5000** in your browser.
@@ -37,6 +37,8 @@ The `/data` volume holds:
 | `config.json` | Meter image processing config (crop, rotation, digit positions) |
 | `settings.json` | App settings (image URL, max threshold) |
 | `value.txt` | Last known meter reading (used for sanity checks) |
+
+The published image is built for both `linux/amd64` and `linux/arm64` (Raspberry Pi 4).
 
 ---
 
@@ -174,4 +176,3 @@ python web_server.py          # starts web UI on http://localhost:5000
 # or
 python main.py run --image tests/0001.png --config tests/0001.json --value tests/0001.txt
 ```
-

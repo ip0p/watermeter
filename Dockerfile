@@ -1,9 +1,7 @@
-FROM ghcr.io/pytorch/pytorch:2.9.0-cuda12.8-cudnn9-runtime
+FROM python:3.11-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential \
@@ -11,25 +9,45 @@ RUN apt-get update && \
         libsm6 \
         libxrender1 \
         libxext6 \
-        libgl1-mesa-dev \
-        && rm -rf /var/lib/apt/lists/*
+        libgl1 && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install CPU-only PyTorch wheels to avoid CUDA dependencies.
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+      --index-url https://download.pytorch.org/whl/cpu \
+      torch torchvision && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY . .
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-
-# download EasyOCR detection models
+# Download EasyOCR detection models at build time.
 RUN python __main__.py init
 
-# Persistent data volume (config.json, settings.json, value.txt)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libglib2.0-0 \
+        libsm6 \
+        libxrender1 \
+        libxext6 \
+        libgl1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
+
+ENV PYTHONUNBUFFERED=1
+ENV PATH="/opt/venv/bin:${PATH}"
+
 VOLUME ["/data"]
 
 EXPOSE 5000
