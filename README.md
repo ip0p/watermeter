@@ -49,6 +49,8 @@ The published image is built for both `linux/amd64` and `linux/arm64` (Raspberry
 3. Paste the compose content from `docker-compose.portainer.yml` in the repository root:
 
 ```yaml
+version: "3.8"
+
 services:
   watermeter:
     image: ghcr.io/ip0p/watermeter:latest
