@@ -25,10 +25,13 @@ docker run -d \
   --name watermeter \
   -p 5000:5000 \
   -v $PWD/data:/data \
+  -e ALLOW_PRIVATE_URLS=true \
   ghcr.io/ip0p/watermeter:latest
 ```
 
 Then open **http://localhost:5000** in your browser.
+
+> **Note:** `ALLOW_PRIVATE_URLS=true` is required when your camera is on a local network (e.g. `192.168.x.x`). Without it the app blocks private/LAN addresses to prevent SSRF attacks.
 
 The `/data` volume holds:
 
@@ -39,6 +42,14 @@ The `/data` volume holds:
 | `value.txt` | Last known meter reading (used for sanity checks) |
 
 The published image is built for both `linux/amd64` and `linux/arm64` (Raspberry Pi 4).
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_DIR` | `/data` | Path to the data directory inside the container. |
+| `PORT` | `5000` | Port the web server listens on. |
+| `ALLOW_PRIVATE_URLS` | *(unset)* | Set to `true` to allow the image URL to resolve to a private/LAN/loopback address. Required for most home camera setups. |
 
 ---
 
@@ -59,6 +70,8 @@ services:
       - "5000:5000"
     volumes:
       - ${WATERMETER_DATA_DIR:-/opt/watermeter-data}:/data
+    environment:
+      - ALLOW_PRIVATE_URLS=${ALLOW_PRIVATE_URLS:-true}   # required when camera is on a LAN address
     restart: unless-stopped
 ```
 
@@ -164,6 +177,8 @@ Create a file named `config.json` based off the [configuration example in this r
 ---
 
 ## ⚙️ Configuration Explained
+
+> **Important:** The crop coordinates and digit positions are **not auto-detected** — they must be configured manually to match your specific meter layout. Use the **Processor Config** page in the web UI to edit `config.json`, and take a snapshot of your meter to determine the correct pixel positions for each field.
 
 | Section             | Key            | Description                                                                                                                                     |
 | ------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |

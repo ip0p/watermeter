@@ -16,6 +16,7 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 logger = logging.getLogger(__name__)
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
+ALLOW_PRIVATE_URLS = os.environ.get("ALLOW_PRIVATE_URLS", "").lower() in ("1", "true", "yes")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
 VALUE_PATH = os.path.join(DATA_DIR, "value.txt")
@@ -106,7 +107,8 @@ def _validate_image_url(url: str):
         or addr.is_reserved
         or addr.is_multicast
     ):
-        return None, "imageUrl resolves to a private, reserved, or multicast address"
+        if not ALLOW_PRIVATE_URLS:
+            return None, "imageUrl resolves to a private, reserved, or multicast address"
     return resolved, None
 
 
