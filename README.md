@@ -239,5 +239,5 @@ source venv/bin/activate
 pip install -r requirements.txt
 python web_server.py          # starts web UI on http://localhost:5000
 # or
-python main.py run --image tests/0001.png --config tests/0001.json --value tests/0001.txt
+python __main__.py run --image tests/0001.png --config tests/0001.json --value tests/0001.txt
 ```
