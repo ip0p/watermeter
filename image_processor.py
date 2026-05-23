@@ -44,7 +44,11 @@ class ImageProcessor:
 
     def process_with_details(self, previous_value: None | float = None, debug: str | None = None) -> dict:
         def unpack_parse_result(parse_result):
-            if isinstance(parse_result, tuple) and len(parse_result) == 2:
+            if (
+                isinstance(parse_result, tuple)
+                and len(parse_result) == 2
+                and isinstance(parse_result[1], list)
+            ):
                 return parse_result
             return parse_result, []
 
