@@ -77,12 +77,14 @@
   "postprocessing": {
     "digits": {
       "brightness": -30,
-      "contrast": 40
+      "contrast": 40,
+      "decolor": false
     },
     "analog": {
       "brightness": 0,
       "contrast": 0,
-      "binaryThreshold": 128
+      "binaryThreshold": 128,
+      "decolor": false
     }
   }
 }

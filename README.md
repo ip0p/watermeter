@@ -111,7 +111,7 @@ Open `http://localhost:5000` to access the web UI:
 
 * **Dashboard** — Shows the current reading and a "Read Now" button. Displays the annotated debug image after each read.
 * **Settings** — Configure the image snapshot URL and max threshold.
-* **Processor Config** — Edit `config.json` directly in the browser and use the built-in image editor (draw a rectangle on the image, pick target/index, apply selection).
+* **Processor Config** — Edit `config.json` directly in the browser, use the built-in image editor (draw a rectangle on the image, pick target/index, apply selection), and run **Test recognition** to see what was detected per digit/dial.
 
 ---
 
@@ -188,8 +188,8 @@ Create a file named `config.json` based off the [configuration example in this r
 | **digits**          | list           | Each entry defines the x/y coordinates and width/height of an individual digit field in the main counter.                                       |
 | **decimal_digits**  | list           | Optional fields for fractional digits (if present on your meter). Empty in this example.                                                        |
 | **decimal_analogs** | list           | Circular or analog dials representing decimal fractions. Each field defines the area to analyze and its color channel (`red`, `green`, `blue`). |
-| **postprocessing**  | `digits`       | Adjust brightness and contrast to improve OCR results for the main digits. Values are percentages (`-30` = darker, `40` = more contrast).       |
-|                     | `analog`       | Same as above, but for analog (dial) sections. `binaryThreshold` defines the grayscale threshold used for detecting pointer position.           |
+| **postprocessing**  | `digits`       | Adjust brightness and contrast to improve OCR results for the main digits. Values are percentages (`-30` = darker, `40` = more contrast). Optional `decolor: true` runs OCR on a grayscale variant as an extra pass.       |
+|                     | `analog`       | Same as above, but for analog (dial) sections. `binaryThreshold` defines the threshold used for pointer detection. Set `decolor: true` for dark pointers when color channel matching fails.           |
 
 ---
 

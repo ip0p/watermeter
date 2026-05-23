@@ -105,6 +105,7 @@
             <div class="border rounded p-3 bg-light">
               <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                 <button class="btn btn-outline-primary btn-sm" id="btnLoadEditorImage" onclick="loadEditorImage(true)">Load image (Read now)</button>
+                <button class="btn btn-outline-success btn-sm" id="btnTestProcessor" onclick="testProcessorRecognition()">Test recognition</button>
                 <label class="form-label mb-0 ms-1">Target</label>
                 <select class="form-select form-select-sm" id="editorTarget" style="width:auto">
                   <option value="digits">digits</option>
@@ -120,8 +121,10 @@
                 Draw the selection around the full dial circle. Set <code>color</code> to <code>red</code>, <code>green</code>, or <code>blue</code> to match the pointer color.
                 Add one entry per decimal dial, ordered from most-significant (leftmost) to least-significant (rightmost) digit.
                 Adjust <strong>binaryThreshold</strong> (in postprocessing &rarr; analog) if the pointer is not detected. Lower the value if the pointer color is faint.
+                If your pointer is mostly dark and color detection fails, enable <code>postprocessing.analog.decolor</code> and test again.
               </div>
               <div id="selectionInfo" class="small text-muted mb-2">Load an image and drag on the canvas to define a rectangle.</div>
+              <pre id="processorTestResult" class="small bg-white border rounded p-2 mb-2" style="white-space:pre-wrap; display:none"></pre>
               <canvas id="configCanvas" width="1" height="1"></canvas>
             </div>
           </div>
@@ -330,6 +333,85 @@
     el.textContent = msg;
     el.style.display = "block";
     setTimeout(() => { el.style.display = "none"; }, 5000);
+  }
+
+  function renderProcessorTestResult(d) {
+    const el = document.getElementById("processorTestResult");
+    const lines = [];
+    lines.push(`Value: ${typeof d.value === "number" ? d.value.toFixed(4) : "—"}`);
+    lines.push(`Main digits: ${d.digits ?? "—"}`);
+    lines.push(`Decimal (${d.decimalSource || "none"}): ${d.decimalDigits ?? "—"}`);
+    lines.push("");
+
+    if (Array.isArray(d.digitDetails) && d.digitDetails.length) {
+      lines.push("digits:");
+      d.digitDetails.forEach((item, idx) => {
+        const conf = typeof item.confidence === "number" ? item.confidence.toFixed(3) : "-";
+        lines.push(`  [${idx}] ${item.digit}  conf=${conf}  method=${item.method}`);
+      });
+      lines.push("");
+    }
+
+    if (Array.isArray(d.decimalDigitDetails) && d.decimalDigitDetails.length) {
+      lines.push("decimal_digits:");
+      d.decimalDigitDetails.forEach((item, idx) => {
+        const conf = typeof item.confidence === "number" ? item.confidence.toFixed(3) : "-";
+        lines.push(`  [${idx}] ${item.digit}  conf=${conf}  method=${item.method}`);
+      });
+      lines.push("");
+    }
+
+    if (Array.isArray(d.analogDetails) && d.analogDetails.length) {
+      lines.push("decimal_analogs:");
+      d.analogDetails.forEach((item, idx) => {
+        const raw = typeof item.value === "number" ? item.value.toFixed(3) : "-";
+        lines.push(`  [${idx}] raw=${raw} digit=${item.digit} corrected=${item.corrected_digit} mode=${item.mode}`);
+      });
+    }
+
+    el.textContent = lines.join("\n");
+    el.style.display = "block";
+  }
+
+  async function testProcessorRecognition() {
+    const btn = document.getElementById("btnTestProcessor");
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Testing...";
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(document.getElementById("configEditor").value);
+      } catch (e) {
+        showAlert("Invalid JSON: " + e.message);
+        return;
+      }
+
+      const r = await fetch("/api/read/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: parsed }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        showAlert("Test failed: " + (d.error || r.statusText));
+      } else {
+        renderProcessorTestResult(d);
+        if (d.debugImage) {
+          const img = document.getElementById("debugImg");
+          img.src = d.debugImage;
+          img.style.display = "block";
+          document.getElementById("noDebug").style.display = "none";
+          await loadEditorImage(false);
+        }
+        showAlert("Processor test completed.", "success");
+      }
+    } catch (e) {
+      showAlert("Test request failed: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
   }
 
   async function loadValue() {
