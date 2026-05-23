@@ -123,16 +123,24 @@ class ImageProcessor:
             debug_image.paste(digit_pil, (dx, dy))
             draw.rectangle((dx, dy, dx + dw - 1, dy + dh - 1), outline=(255, 0, 0), width=1)
             #self.__debug_show_image("digit", digit_pil)
-            text = get_ocr().readtext(cv2.cvtColor(np.array(digit_pil), cv2.COLOR_RGB2BGR), allowlist="0123456789")
-            if len(text) != 1:
+            digit_for_ocr = cv2.cvtColor(np.array(digit_pil), cv2.COLOR_RGB2BGR)
+            text = get_ocr().readtext(digit_for_ocr, allowlist="0123456789")
+
+            # Fallback: add small border if first pass was ambiguous.
+            # This helps narrow glyphs like "1" that can be clipped at crop edges.
+            if len(text) != 1 or len(text[0][1]) != 1:
+                bordered_digit_for_ocr = cv2.copyMakeBorder(
+                    digit_for_ocr,
+                    4, 4, 4, 4,
+                    cv2.BORDER_CONSTANT,
+                    value=(255, 255, 255),
+                )
+                text = get_ocr().readtext(bordered_digit_for_ocr, allowlist="0123456789")
+
+            if len(text) != 1 or len(text[0][1]) != 1:
                 final_text += "?"
                 continue
-            confidence = text[0][2]
-            text = text[0][1]
-            if len(text) != 1:
-                final_text += "?"
-                continue
-            final_text += text
+            final_text += text[0][1]
 
         return final_text
 
