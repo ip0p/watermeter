@@ -103,6 +103,17 @@ class ImageProcessor:
         if len(digit_config) == 0:
             return None
 
+        def extract_single_digit(ocr_result):
+            if len(ocr_result) != 1:
+                return None
+            candidate = ocr_result[0]
+            if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
+                return None
+            text = candidate[1]
+            if not isinstance(text, str) or len(text) != 1:
+                return None
+            return text
+
         final_text = ""
         for d in digit_config:
             dx, dy, dw, dh = d["x"], d["y"], d["width"], d["height"]
@@ -125,10 +136,11 @@ class ImageProcessor:
             #self.__debug_show_image("digit", digit_pil)
             digit_for_ocr = cv2.cvtColor(np.array(digit_pil), cv2.COLOR_RGB2BGR)
             text = get_ocr().readtext(digit_for_ocr, allowlist="0123456789")
+            recognized_digit = extract_single_digit(text)
 
             # Fallback: add small border if first pass was ambiguous.
             # This helps narrow glyphs like "1" that can be clipped at crop edges.
-            if len(text) != 1 or len(text[0][1]) != 1:
+            if recognized_digit is None:
                 bordered_digit_for_ocr = cv2.copyMakeBorder(
                     digit_for_ocr,
                     4, 4, 4, 4,
@@ -136,11 +148,12 @@ class ImageProcessor:
                     value=(255, 255, 255),
                 )
                 text = get_ocr().readtext(bordered_digit_for_ocr, allowlist="0123456789")
+                recognized_digit = extract_single_digit(text)
 
-            if len(text) != 1 or len(text[0][1]) != 1:
+            if recognized_digit is None:
                 final_text += "?"
                 continue
-            final_text += text[0][1]
+            final_text += recognized_digit
 
         return final_text
 
