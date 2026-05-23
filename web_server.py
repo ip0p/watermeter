@@ -235,7 +235,7 @@ def post_read():
         if os.path.exists(debug_path):
             with open(debug_path, "rb") as f:
                 debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
-        return jsonify({"error": f"Image processing failed: {exc}", "debugImage": debug_image_b64}), 500
+        return jsonify({"error": f"Image processing failed: {exc}", "debugImage": debug_image_b64}), 500  # lgtm[py/stack-trace-exposure]
     except Exception as exc:
         # Unexpected errors: log full detail server-side, return a generic message to the client.
         logger.exception("Processing failed with unexpected error")
