@@ -233,7 +233,7 @@ def post_read():
         if os.path.exists(debug_path):
             with open(debug_path, "rb") as f:
                 debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
-        return jsonify({"error": "Image processing failed", "debugImage": debug_image_b64}), 500
+        return jsonify({"error": f"Image processing failed: {exc}", "debugImage": debug_image_b64}), 500
 
     if result is None:
         return jsonify({"error": "Could not parse image"}), 422

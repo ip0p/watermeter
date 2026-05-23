@@ -115,6 +115,12 @@
                 <input type="number" class="form-control form-control-sm" id="editorIndex" min="0" value="0" style="width:85px" />
                 <button class="btn btn-primary btn-sm" onclick="applySelectionToConfig()">Apply selection</button>
               </div>
+              <div id="analogHelp" class="alert alert-info small py-2 mb-2" style="display:none">
+                <strong>Analog dial (rotating pointer):</strong> Each entry covers one circular dial whose arrow rotates to point at a number 0–9.
+                Draw the selection around the full dial circle. Set <code>color</code> to <code>red</code>, <code>green</code>, or <code>blue</code> to match the pointer color.
+                Add one entry per decimal dial, ordered from most-significant (leftmost) to least-significant (rightmost) digit.
+                Adjust <strong>binaryThreshold</strong> (in postprocessing → analog) if the pointer is not detected — lower the value if the pointer colour is faint.
+              </div>
               <div id="selectionInfo" class="small text-muted mb-2">Load an image and drag on the canvas to define a rectangle.</div>
               <canvas id="configCanvas" width="1" height="1"></canvas>
             </div>
@@ -187,6 +193,11 @@
       return;
     }
     info.textContent = `Selection: x=${currentSelection.x}, y=${currentSelection.y}, width=${currentSelection.width}, height=${currentSelection.height}`;
+  }
+
+  function updateAnalogHelp() {
+    const target = document.getElementById("editorTarget").value;
+    document.getElementById("analogHelp").style.display = target === "decimal_analogs" ? "block" : "none";
   }
 
   function renderEditorCanvas() {
@@ -448,6 +459,7 @@
   });
   document.getElementById("editorTarget").addEventListener("change", () => {
     updateEditorIndexBounds();
+    updateAnalogHelp();
     renderEditorCanvas();
   });
   document.getElementById("editorIndex").addEventListener("input", () => {
