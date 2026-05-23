@@ -89,7 +89,8 @@ class ImageProcessor:
         #print(f"Raw results: {digits}.{decimal_digits}")
         final_value = float(digits.replace("?", "0")) # if digit parsing fails replace with 0
         if decimal_digits:
-            decimal_value = float("0." + decimal_digits)
+            decimal_sanitized = "".join(c if c.isdigit() else "0" for c in decimal_digits)
+            decimal_value = float("0." + decimal_sanitized)
             if previous_value:
                 # context aware parsing, last digit of the integer value may be wrong due to rotating nature
                 # check if we're in range of it being inaccurate and just use last main value
