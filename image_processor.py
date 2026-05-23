@@ -60,18 +60,18 @@ class ImageProcessor:
         # error handling so debug image still gets created
         err = None
         try:
-            digits = self._parse_digits(cropped, draw, self.config["digits"])
+            digits = self._parse_digits(cropped, draw, debug_image, self.config["digits"])
         except Exception as e:
             if err is None:
                 err = e
         try:
-            decimal_digits = self._parse_digits(cropped, draw, self.config["decimal_digits"])
+            decimal_digits = self._parse_digits(cropped, draw, debug_image, self.config["decimal_digits"])
         except Exception as e:
             if err is None:
                 err = e
         if decimal_digits is None:
             try:
-                decimal_digits = self._parse_analogs(cropped, draw, self.config["decimal_analogs"])
+                decimal_digits = self._parse_analogs(cropped, draw, debug_image, self.config["decimal_analogs"])
             except Exception as e:
                 if err is None:
                     err = e
@@ -99,7 +99,7 @@ class ImageProcessor:
 
         return final_value
 
-    def _parse_digits(self, image, draw: ImageDraw.ImageDraw, digit_config: list[dict]):
+    def _parse_digits(self, image, draw: ImageDraw.ImageDraw, debug_image: Image.Image, digit_config: list[dict]):
         if len(digit_config) == 0:
             return None
 
@@ -119,6 +119,8 @@ class ImageProcessor:
             if contrast != 0:
                 digit_pil = ImageEnhance.Contrast(digit_pil).enhance(1 + contrast / 100)
 
+            # Paste postprocessed digit back so the preview reflects what OCR actually sees
+            debug_image.paste(digit_pil, (dx, dy))
             draw.rectangle((dx, dy, dx + dw - 1, dy + dh - 1), outline=(255, 0, 0), width=1)
             #self.__debug_show_image("digit", digit_pil)
             text = get_ocr().readtext(cv2.cvtColor(np.array(digit_pil), cv2.COLOR_RGB2BGR), allowlist="0123456789")
@@ -134,12 +136,12 @@ class ImageProcessor:
 
         return final_text
 
-    def _parse_analogs(self, image, draw: ImageDraw.ImageDraw, analogs_config: list[dict]) -> str | None:
+    def _parse_analogs(self, image, draw: ImageDraw.ImageDraw, debug_image: Image.Image, analogs_config: list[dict]) -> str | None:
         if len(analogs_config) == 0:
             return None
         result = []
         for analog in analogs_config:
-            result.append(self._parse_analog(image, draw, analog))
+            result.append(self._parse_analog(image, draw, debug_image, analog))
         result_str = ""
         # perform context aware parsing
         # this helps with slightly off values due to perspective errors
@@ -160,11 +162,8 @@ class ImageProcessor:
 
         return result_str
 
-    def _parse_analog(self, image, draw: ImageDraw.ImageDraw, cfg: dict):
+    def _parse_analog(self, image, draw: ImageDraw.ImageDraw, debug_image: Image.Image, cfg: dict):
         dx, dy, dw, dh, color = cfg["x"], cfg["y"], cfg["width"], cfg["height"], cfg["color"]
-        draw.rectangle((dx, dy, dx + dw - 1, dy + dh - 1), outline=(255, 0, 0), width=1)
-        draw.line((dx, dy, dx + dw - 1, dy + dh - 1), fill=(255, 0, 0), width=1)
-        draw.line((dx, dy + dh - 1, dx + dw - 1, dy), fill=(255, 0, 0), width=1)
 
         analog_image = image[dy:dy + dh, dx:dx + dw]
 
@@ -178,6 +177,13 @@ class ImageProcessor:
             analog_pil = ImageEnhance.Brightness(analog_pil).enhance(1 + brightness / 100)
         if contrast != 0:
             analog_pil = ImageEnhance.Contrast(analog_pil).enhance(1 + contrast / 100)
+
+        # Paste postprocessed analog back so the preview reflects what detection actually uses
+        debug_image.paste(analog_pil, (dx, dy))
+
+        draw.rectangle((dx, dy, dx + dw - 1, dy + dh - 1), outline=(255, 0, 0), width=1)
+        draw.line((dx, dy, dx + dw - 1, dy + dh - 1), fill=(255, 0, 0), width=1)
+        draw.line((dx, dy + dh - 1, dx + dw - 1, dy), fill=(255, 0, 0), width=1)
 
         analog_image = cv2.cvtColor(np.array(analog_pil), cv2.COLOR_RGB2BGR)
 
@@ -199,7 +205,13 @@ class ImageProcessor:
         height, width = target_color_image.shape
         white_pixels = np.column_stack(np.where(target_color_image == 255))
         if len(white_pixels) == 0:
-            raise ValueError("Color not found in image or binaryThreshold too high")
+            threshold = self.config["postprocessing"]["analog"]["binaryThreshold"]
+            raise ValueError(
+                f"No '{color}' pointer pixels found after thresholding "
+                f"(binaryThreshold={threshold}). "
+                "Check that the pointer color matches the 'color' field "
+                "and consider lowering binaryThreshold if the pointer is faint."
+            )
         cx, cy = width // 2, height // 2
         distances = np.sqrt((white_pixels[:, 1] - cx) ** 2 + (white_pixels[:, 0] - cy) ** 2)
 

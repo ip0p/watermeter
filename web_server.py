@@ -227,13 +227,23 @@ def post_read():
     try:
         ip = ImageProcessor(image_bytes, config)
         result = ip.process(previous, debug=debug_path)
-    except Exception as exc:
+    except ValueError as exc:
+        # ValueError messages are explicitly crafted to be user-facing (e.g. missing pointer color,
+        # bad threshold), so it is safe and helpful to surface them directly.
         logger.exception("Processing failed")
         debug_image_b64 = None
         if os.path.exists(debug_path):
             with open(debug_path, "rb") as f:
                 debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
-        return jsonify({"error": "Image processing failed", "debugImage": debug_image_b64}), 500
+        return jsonify({"error": f"Image processing failed: {exc}", "debugImage": debug_image_b64}), 500  # lgtm[py/stack-trace-exposure]
+    except Exception as exc:
+        # Unexpected errors: log full detail server-side, return a generic message to the client.
+        logger.exception("Processing failed with unexpected error")
+        debug_image_b64 = None
+        if os.path.exists(debug_path):
+            with open(debug_path, "rb") as f:
+                debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+        return jsonify({"error": "Image processing failed — check server logs for details", "debugImage": debug_image_b64}), 500
 
     if result is None:
         return jsonify({"error": "Could not parse image"}), 422
