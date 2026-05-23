@@ -108,15 +108,22 @@ class ImageProcessor:
         FALLBACK_OCR_BORDER_SIZE = 4
 
         def extract_single_digit(ocr_result):
-            if len(ocr_result) != 1:
-                return None
-            candidate = ocr_result[0]
-            if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
-                return None
-            text = candidate[1]
-            if not isinstance(text, str) or len(text) != 1:
-                return None
-            return text
+            best_digit = None
+            best_confidence = float("-inf")
+            for candidate in ocr_result:
+                if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
+                    continue
+                text = candidate[1]
+                if not isinstance(text, str):
+                    continue
+                digits_only = "".join(c for c in text if c.isdigit())
+                if len(digits_only) != 1:
+                    continue
+                confidence = candidate[2] if len(candidate) >= 3 and isinstance(candidate[2], (int, float)) else 0.0
+                if confidence > best_confidence:
+                    best_digit = digits_only
+                    best_confidence = confidence
+            return best_digit
 
         final_text = ""
         for d in digit_config:

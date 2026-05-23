@@ -62,5 +62,52 @@ class TestDecimalPlaceholderHandling(unittest.TestCase):
         self.assertEqual(value, 12345.006)
 
 
+class TestDigitExtractionRobustness(unittest.TestCase):
+    def _build_processor(self):
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", image)
+        self.assertTrue(ok)
+        config = {
+            "image": {
+                "rotate": 0,
+                "crop": {"x": 0, "y": 0, "width": 20, "height": 20},
+            },
+            "digits": [{"x": 0, "y": 0, "width": 20, "height": 20}],
+            "decimal_digits": [],
+            "decimal_analogs": [],
+            "postprocessing": {
+                "digits": {"brightness": 0, "contrast": 0},
+                "analog": {"brightness": 0, "contrast": 0, "binaryThreshold": 128},
+            },
+        }
+        return ImageProcessor(encoded.tobytes(), config)
+
+    def test_prefers_highest_confidence_single_digit_candidate(self):
+        ip = self._build_processor()
+        mock_reader = mock.Mock()
+        mock_reader.readtext.return_value = [
+            [None, "?", 0.99],
+            [None, "4", 0.80],
+            [None, "8", 0.20],
+        ]
+
+        with mock.patch("image_processor.get_ocr", return_value=mock_reader):
+            value = ip.process()
+
+        self.assertEqual(value, 4.0)
+
+    def test_accepts_digit_embedded_in_single_character_noise(self):
+        ip = self._build_processor()
+        mock_reader = mock.Mock()
+        mock_reader.readtext.return_value = [
+            [None, "7.", 0.90],
+        ]
+
+        with mock.patch("image_processor.get_ocr", return_value=mock_reader):
+            value = ip.process()
+
+        self.assertEqual(value, 7.0)
+
+
 if __name__ == '__main__':
     unittest.main()
