@@ -108,6 +108,20 @@ class TestDigitExtractionRobustness(unittest.TestCase):
 
         self.assertEqual(value, 7.0)
 
+    def test_invalid_candidates_fall_back_to_zero(self):
+        ip = self._build_processor()
+        mock_reader = mock.Mock()
+        mock_reader.readtext.return_value = [
+            [None, "??", 0.90],
+            [None, "", 0.80],
+            [None, "AB", 0.70],
+        ]
+
+        with mock.patch("image_processor.get_ocr", return_value=mock_reader):
+            value = ip.process()
+
+        self.assertEqual(value, 0.0)
+
 
 if __name__ == '__main__':
     unittest.main()

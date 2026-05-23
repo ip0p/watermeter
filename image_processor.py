@@ -119,7 +119,7 @@ class ImageProcessor:
                 digits_only = "".join(c for c in text if c.isdigit())
                 if len(digits_only) != 1:
                     continue
-                confidence = candidate[2] if len(candidate) >= 3 and isinstance(candidate[2], (int, float)) else 0.0
+                confidence = candidate[2] if len(candidate) >= 3 and isinstance(candidate[2], (int, float)) else float("-inf")
                 if confidence > best_confidence:
                     best_digit = digits_only
                     best_confidence = confidence
