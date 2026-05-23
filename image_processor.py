@@ -144,7 +144,9 @@ class ImageProcessor:
             return None
 
         FALLBACK_OCR_BORDER_SIZE = 4
+        # 2x and 3x keep small wheel glyphs readable for OCR while avoiding excessive blur/noise.
         FALLBACK_OCR_SCALE_FACTORS = (2, 3)
+        FALLBACK_EARLY_EXIT_CONFIDENCE = 0.9
 
         def extract_single_digit(ocr_result):
             best_digit = None
@@ -242,6 +244,10 @@ class ImageProcessor:
                             best_digit = candidate_digit
                             best_confidence = confidence
                             best_method = f"{method}+{fallback_suffix}"
+                            if best_confidence >= FALLBACK_EARLY_EXIT_CONFIDENCE:
+                                break
+                    if best_confidence >= FALLBACK_EARLY_EXIT_CONFIDENCE:
+                        break
 
             if best_digit is None:
                 final_text += "?"

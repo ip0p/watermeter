@@ -125,11 +125,14 @@ class TestDigitExtractionRobustness(unittest.TestCase):
     def test_scaled_fallback_can_recover_missed_digit(self):
         ip = self._build_processor()
         mock_reader = mock.Mock()
+        min_scaled_dimension = 56
+        low_confidence = 0.40
+        recovered_confidence = 0.94
 
         def readtext_side_effect(image, allowlist=None):
-            if image.shape[0] >= 56 and image.shape[1] >= 56:
-                return [[None, "9", 0.94]]
-            return [[None, "??", 0.40]]
+            if image.shape[0] >= min_scaled_dimension and image.shape[1] >= min_scaled_dimension:
+                return [[None, "9", recovered_confidence]]
+            return [[None, "??", low_confidence]]
 
         mock_reader.readtext.side_effect = readtext_side_effect
 
