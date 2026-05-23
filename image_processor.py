@@ -103,6 +103,8 @@ class ImageProcessor:
         if len(digit_config) == 0:
             return None
 
+        FALLBACK_OCR_BORDER_SIZE = 4
+
         def extract_single_digit(ocr_result):
             if len(ocr_result) != 1:
                 return None
@@ -143,7 +145,8 @@ class ImageProcessor:
             if recognized_digit is None:
                 bordered_digit_for_ocr = cv2.copyMakeBorder(
                     digit_for_ocr,
-                    4, 4, 4, 4,
+                    FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
+                    FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
                     cv2.BORDER_CONSTANT,
                     value=(255, 255, 255),
                 )
