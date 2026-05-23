@@ -122,6 +122,51 @@ class TestDigitExtractionRobustness(unittest.TestCase):
 
         self.assertEqual(value, 0.0)
 
+    def test_scaled_fallback_can_recover_missed_digit(self):
+        ip = self._build_processor()
+        mock_reader = mock.Mock()
+        # Base test digit crop is 20x20; fallback adds 4px border each side (28x28),
+        # so 56x56 indicates the 2x scaled fallback variant.
+        min_scaled_dimension = 56
+        low_confidence = 0.40
+        recovered_confidence = 0.94
+
+        def readtext_side_effect(image, allowlist=None):
+            if image.shape[0] >= min_scaled_dimension and image.shape[1] >= min_scaled_dimension:
+                return [[None, "9", recovered_confidence]]
+            return [[None, "??", low_confidence]]
+
+        mock_reader.readtext.side_effect = readtext_side_effect
+
+        with mock.patch("image_processor.get_ocr", return_value=mock_reader):
+            details = ip.process_with_details()
+
+        self.assertEqual(details["value"], 9.0)
+        self.assertEqual(details["digit_details"][0]["digit"], "9")
+        self.assertIn("scale", details["digit_details"][0]["method"])
+
+    def test_three_x_scaled_fallback_can_recover_missed_digit(self):
+        ip = self._build_processor()
+        mock_reader = mock.Mock()
+        # Base crop 20x20 -> bordered 28x28 -> 3x scaled is 84x84.
+        min_three_x_scaled_dimension = 84
+        low_confidence = 0.40
+        recovered_confidence = 0.95
+
+        def readtext_side_effect(image, allowlist=None):
+            if image.shape[0] >= min_three_x_scaled_dimension and image.shape[1] >= min_three_x_scaled_dimension:
+                return [[None, "8", recovered_confidence]]
+            return [[None, "??", low_confidence]]
+
+        mock_reader.readtext.side_effect = readtext_side_effect
+
+        with mock.patch("image_processor.get_ocr", return_value=mock_reader):
+            details = ip.process_with_details()
+
+        self.assertEqual(details["value"], 8.0)
+        self.assertEqual(details["digit_details"][0]["digit"], "8")
+        self.assertIn("scale3x", details["digit_details"][0]["method"])
+
 
 if __name__ == '__main__':
     unittest.main()
