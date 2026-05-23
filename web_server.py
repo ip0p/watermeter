@@ -305,10 +305,10 @@ def post_read_test():
     try:
         ip = ImageProcessor(image_bytes, config)
         details = ip.process_with_details(previous, debug=debug_path)
-    except ValueError as exc:
+    except ValueError:
         logger.exception("Test processing failed")
         debug_image_b64 = _debug_image_data_url(debug_path)
-        return jsonify({"error": f"Image processing failed: {exc}", "debugImage": debug_image_b64}), 500  # lgtm[py/stack-trace-exposure]
+        return jsonify({"error": "Image processing failed: check pointer color/threshold/decolor settings", "debugImage": debug_image_b64}), 500
     except Exception:
         logger.exception("Test processing failed with unexpected error")
         debug_image_b64 = _debug_image_data_url(debug_path)
