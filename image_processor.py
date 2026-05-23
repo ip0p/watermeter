@@ -43,6 +43,11 @@ class ImageProcessor:
         return self.process_with_details(previous_value=previous_value, debug=debug)["value"]
 
     def process_with_details(self, previous_value: None | float = None, debug: str | None = None) -> dict:
+        def unpack_parse_result(parse_result):
+            if isinstance(parse_result, tuple) and len(parse_result) == 2:
+                return parse_result
+            return parse_result, []
+
         # Rotate the image
         (h, w) = self.img.shape[:2]
         M = cv2.getRotationMatrix2D((w // 2, h // 2), self.config["image"]["rotate"], 1.0)
@@ -69,12 +74,16 @@ class ImageProcessor:
         analog_details = []
         decimal_source = None
         try:
-            digits, digit_details = self._parse_digits(cropped, draw, debug_image, self.config["digits"], with_details=True)
+            digits, digit_details = unpack_parse_result(
+                self._parse_digits(cropped, draw, debug_image, self.config["digits"], with_details=True)
+            )
         except Exception as e:
             if err is None:
                 err = e
         try:
-            decimal_digits, decimal_digit_details = self._parse_digits(cropped, draw, debug_image, self.config["decimal_digits"], with_details=True)
+            decimal_digits, decimal_digit_details = unpack_parse_result(
+                self._parse_digits(cropped, draw, debug_image, self.config["decimal_digits"], with_details=True)
+            )
             if decimal_digits is not None:
                 decimal_source = "decimal_digits"
         except Exception as e:
@@ -82,7 +91,9 @@ class ImageProcessor:
                 err = e
         if decimal_digits is None:
             try:
-                decimal_digits, analog_details = self._parse_analogs(cropped, draw, debug_image, self.config["decimal_analogs"], with_details=True)
+                decimal_digits, analog_details = unpack_parse_result(
+                    self._parse_analogs(cropped, draw, debug_image, self.config["decimal_analogs"], with_details=True)
+                )
                 if decimal_digits is not None:
                     decimal_source = "decimal_analogs"
             except Exception as e:
