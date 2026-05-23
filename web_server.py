@@ -47,12 +47,14 @@ DEFAULT_CONFIG = {
     "postprocessing": {
         "digits": {
             "brightness": 0,
-            "contrast": 0
+            "contrast": 0,
+            "decolor": False
         },
         "analog": {
             "brightness": 0,
             "contrast": 0,
-            "binaryThreshold": 128
+            "binaryThreshold": 128,
+            "decolor": False
         }
     }
 }
@@ -123,6 +125,29 @@ def _build_safe_url(original_url: str, resolved_ip: str) -> tuple[str, dict]:
     netloc = resolved_ip if port is None else f"{resolved_ip}:{port}"
     rewritten = parsed._replace(netloc=netloc).geturl()
     return rewritten, {"Host": host_header}
+
+
+def _fetch_image_bytes(image_url: str):
+    resolved_ip, url_error = _validate_image_url(image_url)
+    if url_error:
+        return None, url_error, 400
+
+    safe_url, extra_headers = _build_safe_url(image_url, resolved_ip)
+    try:
+        # URL is validated and rewritten to a resolved IP with private-network checks in _validate_image_url.
+        resp = requests.get(safe_url, timeout=10, allow_redirects=False, headers=extra_headers)  # lgtm[py/full-ssrf]
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as exc:
+        logger.warning("Failed to fetch image from %s: %s", image_url, exc)
+        return None, "Failed to fetch image from the configured URL", 502
+    return resp.content, None, None
+
+
+def _debug_image_data_url(path):
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -196,10 +221,6 @@ def post_read():
     if not image_url:
         return jsonify({"error": "No imageUrl configured"}), 400
 
-    resolved_ip, url_error = _validate_image_url(image_url)
-    if url_error:
-        return jsonify({"error": url_error}), 400
-
     config = _load_json(CONFIG_PATH, dict(DEFAULT_CONFIG))
 
     # Merge maxThreshold from settings into config sanity section
@@ -207,17 +228,9 @@ def post_read():
     if max_threshold is not None:
         config.setdefault("sanity", {})["maxThreshold"] = max_threshold
 
-    # Fetch image using the pre-resolved IP to prevent DNS rebinding.
-    # Redirects are disabled to prevent redirect-based SSRF bypasses.
-    safe_url, extra_headers = _build_safe_url(image_url, resolved_ip)
-    try:
-        resp = requests.get(safe_url, timeout=10, allow_redirects=False, headers=extra_headers)
-        resp.raise_for_status()
-    except requests.exceptions.RequestException as exc:
-        logger.warning("Failed to fetch image from %s: %s", image_url, exc)
-        return jsonify({"error": "Failed to fetch image from the configured URL"}), 502
-
-    image_bytes = resp.content
+    image_bytes, fetch_error, status_code = _fetch_image_bytes(image_url)
+    if fetch_error:
+        return jsonify({"error": fetch_error}), status_code
 
     previous = _load_value()
 
@@ -231,18 +244,12 @@ def post_read():
         # ValueError messages are explicitly crafted to be user-facing (e.g. missing pointer color,
         # bad threshold), so it is safe and helpful to surface them directly.
         logger.exception("Processing failed")
-        debug_image_b64 = None
-        if os.path.exists(debug_path):
-            with open(debug_path, "rb") as f:
-                debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+        debug_image_b64 = _debug_image_data_url(debug_path)
         return jsonify({"error": f"Image processing failed: {exc}", "debugImage": debug_image_b64}), 500  # lgtm[py/stack-trace-exposure]
     except Exception as exc:
         # Unexpected errors: log full detail server-side, return a generic message to the client.
         logger.exception("Processing failed with unexpected error")
-        debug_image_b64 = None
-        if os.path.exists(debug_path):
-            with open(debug_path, "rb") as f:
-                debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+        debug_image_b64 = _debug_image_data_url(debug_path)
         return jsonify({"error": "Image processing failed — check server logs for details", "debugImage": debug_image_b64}), 500
 
     if result is None:
@@ -264,14 +271,59 @@ def post_read():
     _save_value(result)
 
     # Read debug image as base64
-    debug_image_b64 = None
-    if os.path.exists(debug_path):
-        with open(debug_path, "rb") as f:
-            debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+    debug_image_b64 = _debug_image_data_url(debug_path)
 
     return jsonify({
         "value": result,
         "previous": previous,
+        "debugImage": debug_image_b64,
+    })
+
+
+@app.post("/api/read/test")
+def post_read_test():
+    body = request.get_json(force=True, silent=True) or {}
+    settings = _load_json(SETTINGS_PATH, dict(DEFAULT_SETTINGS))
+
+    image_url = body.get("imageUrl") or settings.get("imageUrl", "")
+    if not image_url:
+        return jsonify({"error": "No imageUrl configured"}), 400
+
+    config = body.get("config")
+    if config is None:
+        config = _load_json(CONFIG_PATH, dict(DEFAULT_CONFIG))
+    elif not isinstance(config, dict):
+        return jsonify({"error": "config must be a JSON object"}), 400
+
+    image_bytes, fetch_error, status_code = _fetch_image_bytes(image_url)
+    if fetch_error:
+        return jsonify({"error": fetch_error}), status_code
+
+    previous = _load_value()
+    debug_path = os.path.join(DATA_DIR, "_debug_test.jpg")
+
+    try:
+        ip = ImageProcessor(image_bytes, config)
+        details = ip.process_with_details(previous, debug=debug_path)
+    except ValueError:
+        logger.exception("Test processing failed")
+        debug_image_b64 = _debug_image_data_url(debug_path)
+        return jsonify({"error": "Image processing failed: check pointer color/threshold/decolor settings", "debugImage": debug_image_b64}), 500
+    except Exception:
+        logger.exception("Test processing failed with unexpected error")
+        debug_image_b64 = _debug_image_data_url(debug_path)
+        return jsonify({"error": "Image processing failed — check server logs for details", "debugImage": debug_image_b64}), 500
+
+    debug_image_b64 = _debug_image_data_url(debug_path)
+    return jsonify({
+        "value": details["value"],
+        "previous": previous,
+        "digits": details["digits"],
+        "decimalDigits": details["decimal_digits"],
+        "digitDetails": details["digit_details"],
+        "decimalDigitDetails": details["decimal_digit_details"],
+        "analogDetails": details["analog_details"],
+        "decimalSource": details["decimal_source"],
         "debugImage": debug_image_b64,
     })
 
