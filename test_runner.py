@@ -122,6 +122,24 @@ class TestDigitExtractionRobustness(unittest.TestCase):
 
         self.assertEqual(value, 0.0)
 
+    def test_scaled_fallback_can_recover_missed_digit(self):
+        ip = self._build_processor()
+        mock_reader = mock.Mock()
+
+        def readtext_side_effect(image, allowlist=None):
+            if image.shape[0] >= 56 and image.shape[1] >= 56:
+                return [[None, "9", 0.94]]
+            return [[None, "??", 0.40]]
+
+        mock_reader.readtext.side_effect = readtext_side_effect
+
+        with mock.patch("image_processor.get_ocr", return_value=mock_reader):
+            details = ip.process_with_details()
+
+        self.assertEqual(details["value"], 9.0)
+        self.assertEqual(details["digit_details"][0]["digit"], "9")
+        self.assertIn("scale", details["digit_details"][0]["method"])
+
 
 if __name__ == '__main__':
     unittest.main()

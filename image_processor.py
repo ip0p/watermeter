@@ -144,6 +144,7 @@ class ImageProcessor:
             return None
 
         FALLBACK_OCR_BORDER_SIZE = 4
+        FALLBACK_OCR_SCALE_FACTORS = (2, 3)
 
         def extract_single_digit(ocr_result):
             best_digit = None
@@ -162,6 +163,31 @@ class ImageProcessor:
                     best_digit = digits_only
                     best_confidence = confidence
             return best_digit, best_confidence
+
+        def build_fallback_images(candidate_image):
+            bordered = cv2.copyMakeBorder(
+                candidate_image,
+                FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
+                FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
+                cv2.BORDER_CONSTANT,
+                value=(255, 255, 255),
+            )
+            fallback_images = [("border", bordered)]
+            for scale in FALLBACK_OCR_SCALE_FACTORS:
+                resized = cv2.resize(
+                    bordered,
+                    None,
+                    fx=scale,
+                    fy=scale,
+                    interpolation=cv2.INTER_CUBIC,
+                )
+                fallback_images.append((f"border+scale{scale}x", resized))
+
+                gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+                _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                thresh_bgr = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+                fallback_images.append((f"border+scale{scale}x+otsu", thresh_bgr))
+            return fallback_images
 
         final_text = ""
         details = []
@@ -209,19 +235,13 @@ class ImageProcessor:
             # This helps narrow glyphs like "1" that can be clipped at crop edges.
             if best_digit is None:
                 for method, candidate_image in ocr_candidates:
-                    bordered_digit_for_ocr = cv2.copyMakeBorder(
-                        candidate_image,
-                        FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
-                        FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
-                        cv2.BORDER_CONSTANT,
-                        value=(255, 255, 255),
-                    )
-                    text = get_ocr().readtext(bordered_digit_for_ocr, allowlist="0123456789")
-                    candidate_digit, confidence = extract_single_digit(text)
-                    if candidate_digit is not None and confidence > best_confidence:
-                        best_digit = candidate_digit
-                        best_confidence = confidence
-                        best_method = f"{method}+border"
+                    for fallback_suffix, fallback_image in build_fallback_images(candidate_image):
+                        text = get_ocr().readtext(fallback_image, allowlist="0123456789")
+                        candidate_digit, confidence = extract_single_digit(text)
+                        if candidate_digit is not None and confidence > best_confidence:
+                            best_digit = candidate_digit
+                            best_confidence = confidence
+                            best_method = f"{method}+{fallback_suffix}"
 
             if best_digit is None:
                 final_text += "?"
