@@ -103,6 +103,19 @@ class ImageProcessor:
         if len(digit_config) == 0:
             return None
 
+        FALLBACK_OCR_BORDER_SIZE = 4
+
+        def extract_single_digit(ocr_result):
+            if len(ocr_result) != 1:
+                return None
+            candidate = ocr_result[0]
+            if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
+                return None
+            text = candidate[1]
+            if not isinstance(text, str) or len(text) != 1:
+                return None
+            return text
+
         final_text = ""
         for d in digit_config:
             dx, dy, dw, dh = d["x"], d["y"], d["width"], d["height"]
@@ -123,16 +136,27 @@ class ImageProcessor:
             debug_image.paste(digit_pil, (dx, dy))
             draw.rectangle((dx, dy, dx + dw - 1, dy + dh - 1), outline=(255, 0, 0), width=1)
             #self.__debug_show_image("digit", digit_pil)
-            text = get_ocr().readtext(cv2.cvtColor(np.array(digit_pil), cv2.COLOR_RGB2BGR), allowlist="0123456789")
-            if len(text) != 1:
+            digit_for_ocr = cv2.cvtColor(np.array(digit_pil), cv2.COLOR_RGB2BGR)
+            text = get_ocr().readtext(digit_for_ocr, allowlist="0123456789")
+            recognized_digit = extract_single_digit(text)
+
+            # Fallback: add small border if first pass was ambiguous.
+            # This helps narrow glyphs like "1" that can be clipped at crop edges.
+            if recognized_digit is None:
+                bordered_digit_for_ocr = cv2.copyMakeBorder(
+                    digit_for_ocr,
+                    FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
+                    FALLBACK_OCR_BORDER_SIZE, FALLBACK_OCR_BORDER_SIZE,
+                    cv2.BORDER_CONSTANT,
+                    value=(255, 255, 255),
+                )
+                text = get_ocr().readtext(bordered_digit_for_ocr, allowlist="0123456789")
+                recognized_digit = extract_single_digit(text)
+
+            if recognized_digit is None:
                 final_text += "?"
                 continue
-            confidence = text[0][2]
-            text = text[0][1]
-            if len(text) != 1:
-                final_text += "?"
-                continue
-            final_text += text
+            final_text += recognized_digit
 
         return final_text
 
