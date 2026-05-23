@@ -229,7 +229,11 @@ def post_read():
         result = ip.process(previous, debug=debug_path)
     except Exception as exc:
         logger.exception("Processing failed")
-        return jsonify({"error": "Image processing failed"}), 500
+        debug_image_b64 = None
+        if os.path.exists(debug_path):
+            with open(debug_path, "rb") as f:
+                debug_image_b64 = "data:image/jpeg;base64," + base64.b64encode(f.read()).decode()
+        return jsonify({"error": "Image processing failed", "debugImage": debug_image_b64}), 500
 
     if result is None:
         return jsonify({"error": "Could not parse image"}), 422
