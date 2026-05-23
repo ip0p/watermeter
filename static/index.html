@@ -365,7 +365,7 @@
       lines.push("decimal_analogs:");
       d.analogDetails.forEach((item, idx) => {
         const raw = typeof item.value === "number" ? item.value.toFixed(3) : "-";
-        lines.push(`  [${idx}] raw=${raw} digit=${item.digit} corrected=${item.corrected_digit} mode=${item.mode}`);
+        lines.push(`  [${idx}] raw=${raw} digit=${item.digit} corrected_digit=${item.corrected_digit} mode=${item.mode}`);
       });
     }
 

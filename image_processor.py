@@ -263,19 +263,16 @@ class ImageProcessor:
         for i in range(len(result)):
             if i == len(result) - 1:
                 corrected = math.floor(result[i])
-                result_str += str(corrected)
-                details[i]["corrected_digit"] = corrected
-                break
-
-            this_value = result[i]
-            next_value = result[i + 1]
-            corr_percent = 20
-            if this_value % 1 > (1 - corr_percent / 100) and next_value < (corr_percent / 10):
-                this_value += (1 - corr_percent / 100)
-            elif this_value % 1 < (corr_percent / 100) and next_value > (10 - corr_percent / 10):
-                this_value -= (1 - corr_percent / 100)
-            this_value = this_value % 10
-            corrected = math.floor(this_value)
+            else:
+                this_value = result[i]
+                next_value = result[i + 1]
+                corr_percent = 20
+                if this_value % 1 > (1 - corr_percent / 100) and next_value < (corr_percent / 10):
+                    this_value += (1 - corr_percent / 100)
+                elif this_value % 1 < (corr_percent / 100) and next_value > (10 - corr_percent / 10):
+                    this_value -= (1 - corr_percent / 100)
+                this_value = this_value % 10
+                corrected = math.floor(this_value)
             result_str += str(corrected)
             details[i]["corrected_digit"] = corrected
 

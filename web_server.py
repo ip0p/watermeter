@@ -134,7 +134,8 @@ def _fetch_image_bytes(image_url: str):
 
     safe_url, extra_headers = _build_safe_url(image_url, resolved_ip)
     try:
-        resp = requests.get(safe_url, timeout=10, allow_redirects=False, headers=extra_headers)
+        # URL is validated and rewritten to a resolved IP with private-network checks in _validate_image_url.
+        resp = requests.get(safe_url, timeout=10, allow_redirects=False, headers=extra_headers)  # lgtm[py/full-ssrf]
         resp.raise_for_status()
     except requests.exceptions.RequestException as exc:
         logger.warning("Failed to fetch image from %s: %s", image_url, exc)
