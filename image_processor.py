@@ -146,6 +146,7 @@ class ImageProcessor:
         FALLBACK_OCR_BORDER_SIZE = 4
         # 2x and 3x keep small wheel glyphs readable for OCR while avoiding excessive blur/noise.
         FALLBACK_OCR_SCALE_FACTORS = (2, 3)
+        # 0.9 is treated as "confident enough" to stop retrying transformed variants for this digit.
         FALLBACK_EARLY_EXIT_CONFIDENCE = 0.9
 
         def extract_single_digit(ocr_result):

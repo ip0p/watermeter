@@ -125,6 +125,8 @@ class TestDigitExtractionRobustness(unittest.TestCase):
     def test_scaled_fallback_can_recover_missed_digit(self):
         ip = self._build_processor()
         mock_reader = mock.Mock()
+        # Base test digit crop is 20x20; fallback adds 4px border each side (28x28),
+        # so 56x56 indicates at least the 2x scaled fallback variant.
         min_scaled_dimension = 56
         low_confidence = 0.40
         recovered_confidence = 0.94
