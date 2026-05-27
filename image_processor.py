@@ -366,6 +366,8 @@ class ImageProcessor:
         #self.__debug_show_image("analog", target_color_image)
 
         # now we need to find the white pixel furthest from the center
+        # but only from the component that is connected close to the center
+        # so markings/noise at the border are ignored.
         height, width = target_color_image.shape
         white_pixels = np.column_stack(np.where(target_color_image == 255))
         if len(white_pixels) == 0:
@@ -377,10 +379,33 @@ class ImageProcessor:
                 "or enable postprocessing.analog.decolor for dark pointers."
             )
         cx, cy = width // 2, height // 2
-        distances = np.sqrt((white_pixels[:, 1] - cx) ** 2 + (white_pixels[:, 0] - cy) ** 2)
+        center_tolerance = max(3.0, min(width, height) * 0.08)
+        num_labels, labels = cv2.connectedComponents(target_color_image)
 
-        furthest_idx = np.argmax(distances)
-        py, px = white_pixels[furthest_idx]
+        pointer_pixels = white_pixels
+        best_component_pixels = None
+        best_component_reach = -1.0
+        for label in range(1, num_labels):
+            component_pixels = np.column_stack(np.where(labels == label))
+            if len(component_pixels) == 0:
+                continue
+            component_distances = np.sqrt(
+                (component_pixels[:, 1] - cx) ** 2 + (component_pixels[:, 0] - cy) ** 2
+            )
+            min_distance = float(np.min(component_distances))
+            if min_distance > center_tolerance:
+                continue
+            reach = float(np.max(component_distances))
+            if reach > best_component_reach:
+                best_component_reach = reach
+                best_component_pixels = component_pixels
+
+        if best_component_pixels is not None:
+            pointer_pixels = best_component_pixels
+
+        distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
+        furthest_idx = int(np.argmax(distances))
+        py, px = pointer_pixels[furthest_idx]
         pdx = px - cx
         pdy = py - cy
         angle = (math.degrees(math.atan2(pdy, pdx)) + 90) % 360

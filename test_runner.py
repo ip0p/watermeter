@@ -5,6 +5,7 @@ from unittest import mock
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw
 
 from image_processor import ImageProcessor
 
@@ -192,6 +193,65 @@ class TestDigitExtractionRobustness(unittest.TestCase):
         self.assertEqual(details["value"], 8.0)
         self.assertEqual(details["digit_details"][0]["digit"], "8")
         self.assertIn("scale3x", details["digit_details"][0]["method"])
+
+
+class TestAnalogPointerDetection(unittest.TestCase):
+    def _build_processor(self):
+        image = np.zeros((120, 120, 3), dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", image)
+        self.assertTrue(ok)
+        config = {
+            "image": {
+                "rotate": 0,
+                "crop": {"x": 0, "y": 0, "width": 120, "height": 120},
+            },
+            "digits": [],
+            "decimal_digits": [],
+            "decimal_analogs": [],
+            "postprocessing": {
+                "digits": {"brightness": 0, "contrast": 0},
+                "analog": {"brightness": 0, "contrast": 0, "binaryThreshold": 120},
+            },
+        }
+        return ImageProcessor(encoded.tobytes(), config)
+
+    def _parse_single_analog(self, processor, analog_image):
+        debug_image = Image.fromarray(cv2.cvtColor(analog_image, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(debug_image)
+        value, details = processor._parse_analog(
+            analog_image,
+            draw,
+            debug_image,
+            {"x": 0, "y": 0, "width": analog_image.shape[1], "height": analog_image.shape[0], "color": "red"},
+            with_detail=True,
+        )
+        return value, details
+
+    def test_prefers_center_connected_pointer_component(self):
+        processor = self._build_processor()
+        analog_image = np.zeros((120, 120, 3), dtype=np.uint8)
+        center = (60, 60)
+
+        # Actual pointer (center-connected).
+        cv2.line(analog_image, center, (35, 95), (0, 0, 255), 4)
+        pointer_value, _ = self._parse_single_analog(processor, analog_image.copy())
+
+        # Add unrelated far-edge red blob that should be ignored.
+        cv2.circle(analog_image, (5, 5), 8, (0, 0, 255), -1)
+        noisy_value, _ = self._parse_single_analog(processor, analog_image)
+
+        self.assertAlmostEqual(pointer_value, noisy_value, places=2)
+
+    def test_falls_back_when_no_center_connected_component_exists(self):
+        processor = self._build_processor()
+        analog_image = np.zeros((120, 120, 3), dtype=np.uint8)
+        cv2.circle(analog_image, (10, 10), 8, (0, 0, 255), -1)
+
+        value, details = self._parse_single_analog(processor, analog_image)
+
+        self.assertGreaterEqual(value, 0)
+        self.assertLess(value, 10)
+        self.assertEqual(details["mode"], "color")
 
 
 if __name__ == '__main__':
