@@ -240,6 +240,8 @@ class TestAnalogPointerDetection(unittest.TestCase):
         cv2.circle(analog_image, (5, 5), 8, (0, 0, 255), -1)
         noisy_value, _ = self._parse_single_analog(processor, analog_image)
 
+        # Two decimals are sufficient here: the assertion guards against major direction changes,
+        # not tiny pixel-level tip jitter from rasterization.
         self.assertAlmostEqual(pointer_value, noisy_value, places=2)
 
     def test_falls_back_when_no_center_connected_component_exists(self):

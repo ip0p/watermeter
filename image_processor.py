@@ -7,6 +7,13 @@ import json
 import easyocr
 
 ocr_readers = {}
+DIAL_POINTER_CENTER_TOLERANCE_RATIO = 0.08
+DIAL_POINTER_CENTER_TOLERANCE_MIN_PX = 3
+DIAL_POINTER_DILATION_KERNEL_SIZE = 3
+DIAL_POINTER_DILATION_KERNEL = np.ones(
+    (DIAL_POINTER_DILATION_KERNEL_SIZE, DIAL_POINTER_DILATION_KERNEL_SIZE),
+    dtype=np.uint8,
+)
 
 def get_ocr(model: str | None = None):
     model_name = (model or "standard").strip() or "standard"
@@ -379,10 +386,18 @@ class ImageProcessor:
                 "or enable postprocessing.analog.decolor for dark pointers."
             )
         cx, cy = width // 2, height // 2
-        center_tolerance = max(3.0, min(width, height) * 0.08)
+        # Pointer strokes should pass near the dial center, while labels/noise near borders should not.
+        # 8% (~13px on typical 160x160 dials) with a 3px floor keeps slight center offsets,
+        # but still rejects markings that are clearly detached from the spindle area.
+        center_tolerance = max(
+            DIAL_POINTER_CENTER_TOLERANCE_MIN_PX,
+            min(width, height) * DIAL_POINTER_CENTER_TOLERANCE_RATIO,
+        )
         component_image = cv2.dilate(
             target_color_image,
-            np.ones((3, 3), dtype=np.uint8),
+            # 3x3 dilation bridges 1px gaps from threshold noise while avoiding broad merges
+            # that larger kernels could introduce between pointer and nearby markings.
+            DIAL_POINTER_DILATION_KERNEL,
             iterations=1,
         )
         num_labels, labels = cv2.connectedComponents(component_image)
@@ -410,7 +425,7 @@ class ImageProcessor:
             pointer_pixels = white_pixels[white_pixel_labels == best_component_label]
 
         distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
-        furthest_idx = int(np.argmax(distances))
+        furthest_idx = np.argmax(distances)
         py, px = pointer_pixels[furthest_idx]
         pdx = px - cx
         pdy = py - cy
