@@ -380,13 +380,19 @@ class ImageProcessor:
             )
         cx, cy = width // 2, height // 2
         center_tolerance = max(3.0, min(width, height) * 0.08)
-        num_labels, labels = cv2.connectedComponents(target_color_image)
+        component_image = cv2.dilate(
+            target_color_image,
+            np.ones((3, 3), dtype=np.uint8),
+            iterations=1,
+        )
+        num_labels, labels = cv2.connectedComponents(component_image)
+        white_pixel_labels = labels[white_pixels[:, 0], white_pixels[:, 1]]
 
         pointer_pixels = white_pixels
-        best_component_pixels = None
+        best_component_label = None
         best_component_reach = -1.0
         for label in range(1, num_labels):
-            component_pixels = np.column_stack(np.where(labels == label))
+            component_pixels = white_pixels[white_pixel_labels == label]
             if len(component_pixels) == 0:
                 continue
             component_distances = np.sqrt(
@@ -398,10 +404,10 @@ class ImageProcessor:
             reach = float(np.max(component_distances))
             if reach > best_component_reach:
                 best_component_reach = reach
-                best_component_pixels = component_pixels
+                best_component_label = label
 
-        if best_component_pixels is not None:
-            pointer_pixels = best_component_pixels
+        if best_component_label is not None:
+            pointer_pixels = white_pixels[white_pixel_labels == best_component_label]
 
         distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
         furthest_idx = int(np.argmax(distances))
