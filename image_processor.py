@@ -7,6 +7,13 @@ import json
 import easyocr
 
 ocr_readers = {}
+DIAL_POINTER_CENTER_TOLERANCE_RATIO = 0.08
+DIAL_POINTER_CENTER_TOLERANCE_MIN_PX = 3
+DIAL_POINTER_DILATION_KERNEL_SIZE = 3
+DIAL_POINTER_DILATION_KERNEL = np.ones(
+    (DIAL_POINTER_DILATION_KERNEL_SIZE, DIAL_POINTER_DILATION_KERNEL_SIZE),
+    dtype=np.uint8,
+)
 
 def get_ocr(model: str | None = None):
     model_name = (model or "standard").strip() or "standard"
@@ -366,6 +373,8 @@ class ImageProcessor:
         #self.__debug_show_image("analog", target_color_image)
 
         # now we need to find the white pixel furthest from the center
+        # but only from the component that is connected close to the center
+        # so markings/noise at the border are ignored.
         height, width = target_color_image.shape
         white_pixels = np.column_stack(np.where(target_color_image == 255))
         if len(white_pixels) == 0:
@@ -377,10 +386,47 @@ class ImageProcessor:
                 "or enable postprocessing.analog.decolor for dark pointers."
             )
         cx, cy = width // 2, height // 2
-        distances = np.sqrt((white_pixels[:, 1] - cx) ** 2 + (white_pixels[:, 0] - cy) ** 2)
+        # Pointer strokes should pass near the dial center, while labels/noise near borders should not.
+        # 8% (~13px on typical 160x160 dials) with a 3px floor keeps slight center offsets,
+        # but still rejects markings that are clearly detached from the spindle area.
+        center_tolerance = max(
+            DIAL_POINTER_CENTER_TOLERANCE_MIN_PX,
+            min(width, height) * DIAL_POINTER_CENTER_TOLERANCE_RATIO,
+        )
+        component_image = cv2.dilate(
+            target_color_image,
+            # 3x3 dilation bridges 1px gaps from threshold noise while avoiding broad merges
+            # that larger kernels could introduce between pointer and nearby markings.
+            DIAL_POINTER_DILATION_KERNEL,
+            iterations=1,
+        )
+        num_labels, labels = cv2.connectedComponents(component_image)
+        white_pixel_labels = labels[white_pixels[:, 0], white_pixels[:, 1]]
 
+        pointer_pixels = white_pixels
+        best_component_label = None
+        best_component_reach = -1.0
+        for label in range(1, num_labels):
+            component_pixels = white_pixels[white_pixel_labels == label]
+            if len(component_pixels) == 0:
+                continue
+            component_distances = np.sqrt(
+                (component_pixels[:, 1] - cx) ** 2 + (component_pixels[:, 0] - cy) ** 2
+            )
+            min_distance = float(np.min(component_distances))
+            if min_distance > center_tolerance:
+                continue
+            reach = float(np.max(component_distances))
+            if reach > best_component_reach:
+                best_component_reach = reach
+                best_component_label = label
+
+        if best_component_label is not None:
+            pointer_pixels = white_pixels[white_pixel_labels == best_component_label]
+
+        distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
         furthest_idx = np.argmax(distances)
-        py, px = white_pixels[furthest_idx]
+        py, px = pointer_pixels[furthest_idx]
         pdx = px - cx
         pdy = py - cy
         angle = (math.degrees(math.atan2(pdy, pdx)) + 90) % 360
