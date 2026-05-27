@@ -13,6 +13,9 @@ This project processes an image of your water meter, crops and corrects it based
 * 🔍 Supports **cropping and rotation** of the image to isolate the meter area.
 * ⚙️ Configurable for different meter layouts via a JSON config file.
 * 🧮 Includes **sanity checking**: ensures readings are consistent and realistic.
+* 🌙 Optional **dark mode**, configurable in the web settings.
+* ⏱️ Optional **timer-based auto-read** on the server.
+* 📡 Optional **MQTT publish** of successful readings.
 * 🐳 Easily run anywhere via **Docker**, no Python setup required.
 * 🌐 Built-in **web UI** and **REST API** for easy configuration and on-demand readings.
 
@@ -38,7 +41,7 @@ The `/data` volume holds:
 | File | Description |
 |---|---|
 | `config.json` | Meter image processing config (crop, rotation, digit positions) |
-| `settings.json` | App settings (image URL, max threshold) |
+| `settings.json` | App settings (image URL, threshold, OCR model, theme, auto-read, MQTT) |
 | `value.txt` | Last known meter reading (used for sanity checks) |
 
 The published image is built for both `linux/amd64` and `linux/arm64` (Raspberry Pi 4).
@@ -85,7 +88,21 @@ curl -fsSL https://raw.githubusercontent.com/ip0p/watermeter/main/config-example
 cat <<'JSON' | sudo tee /opt/watermeter-data/settings.json >/dev/null
 {
   "imageUrl": "http://camera/snapshot.jpg",
-  "maxThreshold": 0.2
+  "maxThreshold": 0.2,
+  "easyOcrModel": "standard",
+  "darkMode": false,
+  "autoReadIntervalSec": 0,
+  "mqtt": {
+    "enabled": false,
+    "host": "mqtt.local",
+    "port": 1883,
+    "topic": "watermeter/value",
+    "username": "",
+    "password": "",
+    "qos": 0,
+    "retain": false,
+    "clientId": ""
+  }
 }
 JSON
 echo "12345.0000" | sudo tee /opt/watermeter-data/value.txt >/dev/null
@@ -110,7 +127,7 @@ curl -X POST http://<your-server>:5000/api/read \
 Open `http://localhost:5000` to access the web UI:
 
 * **Dashboard** — Shows the current reading and a "Read Now" button. Displays the annotated debug image after each read.
-* **Settings** — Configure the image snapshot URL and max threshold.
+* **Settings** — Configure image URL, threshold, EasyOCR model, dark mode, auto-read interval, and MQTT publishing.
 * **Processor Config** — Edit `config.json` directly in the browser, use the built-in image editor (draw a rectangle on the image, pick target/index, apply selection), and run **Test recognition** to see what was detected per digit/dial.
 
 ---
@@ -123,6 +140,7 @@ Open `http://localhost:5000` to access the web UI:
 | `POST` | `/api/read` | Fetch image from configured URL, run OCR, return reading + debug image |
 | `GET` | `/api/settings` | Return current app settings |
 | `PUT` | `/api/settings` | Update app settings |
+| `POST` | `/api/read/test` | Run a test read and return digit/analog recognition details |
 | `GET` | `/api/config` | Return current processor config |
 | `PUT` | `/api/config` | Update processor config |
 

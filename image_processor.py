@@ -6,16 +6,16 @@ from PIL import Image, ImageEnhance, ImageDraw
 import json
 import easyocr
 
-ocr = None
+ocr_readers = {}
 
-def get_ocr():
-    global ocr
-    if ocr is None:
-        ocr = easyocr.Reader(["en"], gpu=False)
-    return ocr
+def get_ocr(model: str | None = None):
+    model_name = (model or "standard").strip() or "standard"
+    if model_name not in ocr_readers:
+        ocr_readers[model_name] = easyocr.Reader(["en"], gpu=False, recog_network=model_name)
+    return ocr_readers[model_name]
 
 class ImageProcessor:
-    def __init__(self, image_source, config_source):
+    def __init__(self, image_source, config_source, ocr_model: str | None = None):
         """
         image_source: path to an image file (str) OR raw image bytes.
         config_source: path to a JSON config file (str) OR a dict.
@@ -38,6 +38,7 @@ class ImageProcessor:
 
         if self.img is None:
             raise ValueError("Image not found")
+        self.ocr_model = (ocr_model or "standard").strip() or "standard"
 
     def process(self, previous_value: None | float = None, debug: str | None = None) -> float:
         return self.process_with_details(previous_value=previous_value, debug=debug)["value"]
@@ -75,6 +76,7 @@ class ImageProcessor:
         digit_details = []
         decimal_digits = None
         decimal_digit_details = []
+        analog_digits = None
         analog_details = []
         decimal_source = None
         try:
@@ -93,16 +95,21 @@ class ImageProcessor:
         except Exception as e:
             if err is None:
                 err = e
-        if decimal_digits is None:
-            try:
-                decimal_digits, analog_details = unpack_parse_result(
-                    self._parse_analogs(cropped, draw, debug_image, self.config["decimal_analogs"], with_details=True)
-                )
-                if decimal_digits is not None:
-                    decimal_source = "decimal_analogs"
-            except Exception as e:
-                if err is None:
-                    err = e
+        try:
+            analog_digits, analog_details = unpack_parse_result(
+                self._parse_analogs(cropped, draw, debug_image, self.config["decimal_analogs"], with_details=True)
+            )
+        except Exception as e:
+            if err is None:
+                err = e
+
+        selected_decimal_digits = decimal_digits
+        # Treat placeholders like "??" as "no valid decimal OCR result" so analog fallback can be used.
+        if selected_decimal_digits is not None and not any(c.isdigit() for c in selected_decimal_digits):
+            selected_decimal_digits = None
+        if selected_decimal_digits is None and analog_digits is not None:
+            selected_decimal_digits = analog_digits
+            decimal_source = "decimal_analogs"
 
         if debug is not None:
             # Save the combined output
@@ -117,8 +124,8 @@ class ImageProcessor:
         #print(f"Raw results: {digits}.{decimal_digits}")
         digits_sanitized = "".join(c if c.isdigit() else "0" for c in digits)
         final_value = float(digits_sanitized) # if digit parsing fails replace with 0
-        if decimal_digits:
-            decimal_sanitized = "".join(c if c.isdigit() else "0" for c in decimal_digits)
+        if selected_decimal_digits:
+            decimal_sanitized = "".join(c if c.isdigit() else "0" for c in selected_decimal_digits)
             decimal_value = float("0." + decimal_sanitized)
             if previous_value:
                 # context aware parsing, last digit of the integer value may be wrong due to rotating nature
@@ -131,6 +138,8 @@ class ImageProcessor:
             "value": final_value,
             "digits": digits,
             "decimal_digits": decimal_digits,
+            "analog_digits": analog_digits,
+            "decimal_used": selected_decimal_digits,
             "digit_details": digit_details,
             "decimal_digit_details": decimal_digit_details,
             "analog_details": analog_details,
@@ -227,7 +236,7 @@ class ImageProcessor:
             best_method = None
 
             for method, candidate_image in ocr_candidates:
-                text = get_ocr().readtext(candidate_image, allowlist="0123456789")
+                text = get_ocr(self.ocr_model).readtext(candidate_image, allowlist="0123456789")
                 candidate_digit, confidence = extract_single_digit(text)
                 if candidate_digit is not None and confidence > best_confidence:
                     best_digit = candidate_digit
@@ -239,7 +248,7 @@ class ImageProcessor:
             if best_digit is None:
                 for method, candidate_image in ocr_candidates:
                     for fallback_suffix, fallback_image in build_fallback_images(candidate_image):
-                        text = get_ocr().readtext(fallback_image, allowlist="0123456789")
+                        text = get_ocr(self.ocr_model).readtext(fallback_image, allowlist="0123456789")
                         candidate_digit, confidence = extract_single_digit(text)
                         if candidate_digit is not None and confidence > best_confidence:
                             best_digit = candidate_digit

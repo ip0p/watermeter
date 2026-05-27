@@ -61,6 +61,32 @@ class TestDecimalPlaceholderHandling(unittest.TestCase):
 
         self.assertEqual(value, 12345.006)
 
+    def test_decimal_placeholders_fall_back_to_analog(self):
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+        ok, encoded = cv2.imencode(".jpg", image)
+        self.assertTrue(ok)
+        config = {
+            "image": {
+                "rotate": 0,
+                "crop": {"x": 0, "y": 0, "width": 20, "height": 20},
+            },
+            "digits": [{}],
+            "decimal_digits": [{}],
+            "decimal_analogs": [{}],
+            "postprocessing": {
+                "digits": {"brightness": 0, "contrast": 0},
+                "analog": {"brightness": 0, "contrast": 0, "binaryThreshold": 128},
+            },
+        }
+
+        with mock.patch.object(ImageProcessor, "_parse_digits", side_effect=["12345", "??"]):
+            with mock.patch.object(ImageProcessor, "_parse_analogs", return_value="6789"):
+                details = ImageProcessor(encoded.tobytes(), config).process_with_details(previous_value=12345.0)
+
+        self.assertEqual(details["value"], 12345.6789)
+        self.assertEqual(details["decimal_source"], "decimal_analogs")
+        self.assertEqual(details["analog_digits"], "6789")
+
 
 class TestDigitExtractionRobustness(unittest.TestCase):
     def _build_processor(self):
