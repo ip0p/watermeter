@@ -104,6 +104,7 @@ class ImageProcessor:
                 err = e
 
         selected_decimal_digits = decimal_digits
+        # Treat placeholders like "??" as "no valid decimal OCR result" so analog fallback can be used.
         if selected_decimal_digits is not None and not any(c.isdigit() for c in selected_decimal_digits):
             selected_decimal_digits = None
         if selected_decimal_digits is None and analog_digits is not None:
@@ -138,6 +139,7 @@ class ImageProcessor:
             "digits": digits,
             "decimal_digits": decimal_digits,
             "analog_digits": analog_digits,
+            "decimal_used": selected_decimal_digits,
             "digit_details": digit_details,
             "decimal_digit_details": decimal_digit_details,
             "analog_details": analog_details,

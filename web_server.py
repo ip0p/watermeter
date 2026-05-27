@@ -13,7 +13,7 @@ import requests
 from flask import Flask, jsonify, request, send_from_directory
 try:
     import paho.mqtt.publish as mqtt_publish
-except Exception:  # pragma: no cover - optional dependency at runtime
+except ImportError:  # pragma: no cover - optional dependency at runtime
     mqtt_publish = None
 
 from image_processor import ImageProcessor, get_ocr
@@ -292,9 +292,9 @@ def _run_processing(image_url, config, previous, settings, debug_path):
         ip = ImageProcessor(image_bytes, config, ocr_model=settings.get("easyOcrModel"))
         details = ip.process_with_details(previous, debug=debug_path)
         return details, None, None
-    except ValueError as exc:
+    except ValueError:
         logger.exception("Processing failed")
-        return None, f"Image processing failed: {exc}", 500
+        return None, "Image processing failed: check pointer color/threshold/decolor settings", 500
     except Exception:
         logger.exception("Processing failed with unexpected error")
         return None, "Image processing failed — check server logs for details", 500
@@ -352,6 +352,7 @@ def _run_read_cycle(
             "digits": details["digits"],
             "decimalDigits": details["decimal_digits"],
             "analogDigits": details["analog_digits"],
+            "decimalUsed": details["decimal_used"],
             "digitDetails": details["digit_details"],
             "decimalDigitDetails": details["decimal_digit_details"],
             "analogDetails": details["analog_details"],
@@ -363,6 +364,7 @@ def _run_read_cycle(
 
 _auto_read_lock = threading.Lock()
 _auto_read_last_run = 0.0
+_auto_read_started = False
 
 
 def _auto_reader_loop():
@@ -398,7 +400,18 @@ def _auto_reader_loop():
         time.sleep(1)
 
 
-threading.Thread(target=_auto_reader_loop, daemon=True).start()
+def _ensure_auto_reader_started():
+    global _auto_read_started
+    if _auto_read_started:
+        return
+    threading.Thread(target=_auto_reader_loop, daemon=True).start()
+    _auto_read_started = True
+
+
+@app.before_request
+def _ensure_auto_reader_from_settings():
+    if _to_int(_load_settings().get("autoReadIntervalSec"), 0) > 0:
+        _ensure_auto_reader_started()
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +457,8 @@ def put_settings():
         return jsonify({"error": "Invalid JSON"}), 400
     settings = _normalize_settings(data)
     _save_json(SETTINGS_PATH, settings)
+    if _to_int(settings.get("autoReadIntervalSec"), 0) > 0:
+        _ensure_auto_reader_started()
     return jsonify({"status": "ok"})
 
 

@@ -399,7 +399,7 @@
     lines.push(`Main digits: ${d.digits ?? "—"}`);
     lines.push(`Decimal OCR: ${d.decimalDigits ?? "—"}`);
     lines.push(`Decimal analog: ${d.analogDigits ?? "—"}`);
-    lines.push(`Decimal used (${d.decimalSource || "none"}): ${(d.decimalSource === "decimal_analogs" ? d.analogDigits : d.decimalDigits) ?? "—"}`);
+    lines.push(`Decimal used (${d.decimalSource || "none"}): ${d.decimalUsed ?? "—"}`);
     lines.push("");
 
     if (Array.isArray(d.digitDetails) && d.digitDetails.length) {
