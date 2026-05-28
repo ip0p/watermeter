@@ -322,27 +322,29 @@ def _mqtt_discovery_message(mqtt_settings):
     if not topic or not discovery_prefix:
         return None, None
 
+    device_name = _mqtt_device_name(mqtt_settings)
     discovery_id = _sanitize_mqtt_identifier(
         str(mqtt_settings.get("clientId") or "").strip() or topic,
         "watermeter_value",
     )
+    entity_id = f"{discovery_id}_value"
     availability_topic = f"{topic}/availability"
     payload = {
-        "name": "Water meter",
-        "unique_id": discovery_id,
+        "name": f"{device_name} value",
+        "unique_id": entity_id,
         "state_topic": topic,
         "availability_topic": availability_topic,
         "payload_available": "online",
         "payload_not_available": "offline",
         "icon": "mdi:water",
         "device": {
-            "identifiers": [_sanitize_mqtt_identifier(_mqtt_device_name(mqtt_settings), "watermeter")],
+            "identifiers": [discovery_id],
             "manufacturer": "ip0p",
             "model": "watermeter",
-            "name": _mqtt_device_name(mqtt_settings),
+            "name": device_name,
         },
     }
-    discovery_topic = f"{discovery_prefix}/sensor/{discovery_id}/config"
+    discovery_topic = f"{discovery_prefix}/sensor/{entity_id}/config"
     signature = (
         discovery_topic,
         json.dumps(payload, sort_keys=True, separators=(",", ":")),
@@ -355,15 +357,23 @@ def _mqtt_discovery_message(mqtt_settings):
     }, signature
 
 
+def _publish_mqtt_batch(messages, mqtt_settings):
+    mqtt_publish.multiple(
+        msgs=messages,
+        **_mqtt_connection_kwargs(mqtt_settings),
+    )
+
+
 def _publish_mqtt_messages(mqtt_settings, value=None):
     global _mqtt_last_discovery_signature
 
     topic = str(mqtt_settings.get("topic") or "").strip()
-    connection_kwargs = _mqtt_connection_kwargs(mqtt_settings)
+    host = str(mqtt_settings.get("host") or "").strip()
+    port = max(1, _to_int(mqtt_settings.get("port"), 1883))
     if mqtt_publish is None:
         logger.warning("MQTT enabled but paho-mqtt is unavailable")
         return False
-    if not connection_kwargs["hostname"] or not topic:
+    if not host or not topic:
         logger.warning("MQTT enabled but host/topic are not configured")
         return False
     discovery_message, discovery_signature = _mqtt_discovery_message(mqtt_settings)
@@ -393,16 +403,13 @@ def _publish_mqtt_messages(mqtt_settings, value=None):
     logger.info(
         "Publishing MQTT message(s) to %s on %s:%s (discovery=%s, retained_state=%s)",
         published_topics,
-        connection_kwargs["hostname"],
-        connection_kwargs["port"],
+        host,
+        port,
         bool(discovery_message is not None),
         _as_bool(mqtt_settings.get("retain")),
     )
     try:
-        mqtt_publish.multiple(
-            msgs=messages,
-            **connection_kwargs,
-        )
+        _publish_mqtt_batch(messages, mqtt_settings)
         if discovery_message is not None:
             _mqtt_last_discovery_signature = discovery_signature
         logger.info("MQTT publish succeeded for %s", published_topics)

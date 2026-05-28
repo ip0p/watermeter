@@ -54,11 +54,13 @@ class TestMqttPublishing(unittest.TestCase):
 
         first_messages = self.fake_publish.calls[0]["msgs"]
         self.assertEqual(len(first_messages), 3)
-        self.assertEqual(first_messages[0]["topic"], "homeassistant/sensor/meter_1/config")
+        self.assertEqual(first_messages[0]["topic"], "homeassistant/sensor/meter_1_value/config")
         discovery_payload = json.loads(first_messages[0]["payload"])
         self.assertEqual(discovery_payload["state_topic"], "watermeter/value")
         self.assertEqual(discovery_payload["availability_topic"], "watermeter/value/availability")
+        self.assertEqual(discovery_payload["unique_id"], "meter_1_value")
         self.assertEqual(discovery_payload["device"]["name"], "meter-1")
+        self.assertEqual(discovery_payload["device"]["identifiers"], ["meter_1"])
         self.assertEqual(first_messages[1]["topic"], "watermeter/value/availability")
         self.assertEqual(first_messages[2]["topic"], "watermeter/value")
         self.assertEqual(first_messages[2]["payload"], "123.456")
