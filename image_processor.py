@@ -153,8 +153,8 @@ class ImageProcessor:
                 err = e
 
         selected_decimal_digits = decimal_digits
-        # Treat placeholders like "??" as "no valid decimal OCR result" so analog fallback can be used.
-        if selected_decimal_digits is not None and not any(c.isdigit() for c in selected_decimal_digits):
+        # Treat any non-digit decimal OCR output as invalid so analog fallback can be used.
+        if selected_decimal_digits is not None and not selected_decimal_digits.isdigit():
             selected_decimal_digits = None
         if selected_decimal_digits is None and analog_digits is not None:
             selected_decimal_digits = analog_digits
@@ -471,8 +471,11 @@ class ImageProcessor:
             pointer_pixels = white_pixels[white_pixel_labels == best_component_label]
 
         distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
-        furthest_idx = np.argmax(distances)
-        py, px = pointer_pixels[furthest_idx]
+        tip_distance_threshold = float(np.max(distances)) * 0.92
+        tip_pixels = pointer_pixels[distances >= tip_distance_threshold]
+        if len(tip_pixels) == 0:
+            tip_pixels = pointer_pixels[[np.argmax(distances)]]
+        py, px = np.round(np.mean(tip_pixels, axis=0)).astype(int)
         pdx = px - cx
         pdy = py - cy
         angle = (math.degrees(math.atan2(pdy, pdx)) + 90) % 360
