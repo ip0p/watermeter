@@ -4,6 +4,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import socket
 import threading
 import time
@@ -18,6 +19,15 @@ except ImportError:  # pragma: no cover - optional dependency at runtime
 
 from image_processor import ImageProcessor, get_ocr
 
+
+def _configure_logging():
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+        )
+
+
 app = Flask(__name__, static_folder="static", static_url_path="")
 logger = logging.getLogger(__name__)
 
@@ -26,6 +36,8 @@ ALLOW_PRIVATE_URLS = os.environ.get("ALLOW_PRIVATE_URLS", "").lower() in ("1", "
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
 VALUE_PATH = os.path.join(DATA_DIR, "value.txt")
+DEFAULT_MQTT_DISCOVERY_PREFIX = "homeassistant"
+MQTT_DEVICE_MANUFACTURER = "ip0p"
 
 DEFAULT_MAX_THRESHOLD = 0.2
 
@@ -40,6 +52,8 @@ DEFAULT_SETTINGS = {
         "host": "",
         "port": 1883,
         "topic": "watermeter/value",
+        "discoveryEnabled": True,
+        "discoveryPrefix": DEFAULT_MQTT_DISCOVERY_PREFIX,
         "username": "",
         "password": "",
         "qos": 0,
@@ -173,6 +187,10 @@ def _normalize_settings(data):
             mqtt_settings["port"] = max(1, _to_int(mqtt_data.get("port"), 1883))
         if "topic" in mqtt_data:
             mqtt_settings["topic"] = str(mqtt_data.get("topic") or "").strip()
+        if "discoveryEnabled" in mqtt_data:
+            mqtt_settings["discoveryEnabled"] = _as_bool(mqtt_data.get("discoveryEnabled"))
+        if "discoveryPrefix" in mqtt_data:
+            mqtt_settings["discoveryPrefix"] = str(mqtt_data.get("discoveryPrefix") or "").strip() or DEFAULT_MQTT_DISCOVERY_PREFIX
         if "username" in mqtt_data:
             mqtt_settings["username"] = str(mqtt_data.get("username") or "")
         if "password" in mqtt_data:
@@ -275,23 +293,143 @@ def _publish_mqtt_value(value, settings):
     if not host or not topic:
         logger.warning("MQTT enabled but host/topic are not configured")
         return
+    _publish_mqtt_messages(mqtt_settings, value)
+
+
+_mqtt_last_discovery_signature = None
+
+
+def _sanitize_mqtt_identifier(value, fallback):
+    identifier = re.sub(r"[^a-zA-Z0-9_]+", "_", str(value or "").strip().lower()).strip("_")
+    if not identifier:
+        logger.warning("Falling back to default MQTT identifier '%s' for value %r", fallback, value)
+    return identifier or fallback
+
+
+def _mqtt_connection_kwargs(mqtt_settings):
     username = mqtt_settings.get("username") or None
     password = mqtt_settings.get("password") or None
-    auth = {"username": username, "password": password} if username else None
+    return {
+        "hostname": str(mqtt_settings.get("host") or "").strip(),
+        "port": max(1, _to_int(mqtt_settings.get("port"), 1883)),
+        "auth": {"username": username, "password": password} if username else None,
+        "client_id": str(mqtt_settings.get("clientId") or ""),
+        "keepalive": 10,
+    }
+
+
+def _mqtt_device_name(mqtt_settings):
+    client_id = str(mqtt_settings.get("clientId") or "").strip()
+    if client_id:
+        return client_id
+    return "Watermeter"
+
+
+def _mqtt_discovery_message(mqtt_settings):
+    if not _as_bool(mqtt_settings.get("discoveryEnabled")):
+        return None, None
+    topic = str(mqtt_settings.get("topic") or "").strip()
+    discovery_prefix = str(mqtt_settings.get("discoveryPrefix") or "").strip() or DEFAULT_MQTT_DISCOVERY_PREFIX
+    if not topic or not discovery_prefix:
+        return None, None
+
+    device_name = _mqtt_device_name(mqtt_settings)
+    topic_parts = [part for part in topic.split("/") if part]
+    topic_identifier_source = "/".join(topic_parts[-2:]) if topic_parts else topic
+    discovery_id = _sanitize_mqtt_identifier(
+        str(mqtt_settings.get("clientId") or "").strip() or topic_identifier_source,
+        "watermeter_value",
+    )
+    entity_id = f"{discovery_id}_value"
+    availability_topic = f"{topic}/availability"
+    payload = {
+        "name": f"{device_name} value",
+        "unique_id": entity_id,
+        "state_topic": topic,
+        "availability_topic": availability_topic,
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "icon": "mdi:water",
+        "device": {
+            "identifiers": [discovery_id],
+            "manufacturer": MQTT_DEVICE_MANUFACTURER,
+            "model": "watermeter",
+            "name": device_name,
+        },
+    }
+    discovery_topic = f"{discovery_prefix}/sensor/{entity_id}/config"
+    signature = (
+        discovery_topic,
+        json.dumps(payload, sort_keys=True, separators=(",", ":")),
+    )
+    return {
+        "topic": discovery_topic,
+        "payload": json.dumps(payload),
+        "qos": 1,
+        "retain": True,
+    }, signature
+
+
+def _publish_mqtt_batch(messages, mqtt_settings):
+    mqtt_publish.multiple(
+        msgs=messages,
+        **_mqtt_connection_kwargs(mqtt_settings),
+    )
+
+
+def _publish_mqtt_messages(mqtt_settings, value=None):
+    global _mqtt_last_discovery_signature
+
+    topic = str(mqtt_settings.get("topic") or "").strip()
+    host = str(mqtt_settings.get("host") or "").strip()
+    port = max(1, _to_int(mqtt_settings.get("port"), 1883))
+    if mqtt_publish is None:
+        logger.warning("MQTT enabled but paho-mqtt is unavailable")
+        return False
+    if not host or not topic:
+        logger.warning("MQTT enabled but host/topic are not configured")
+        return False
+    discovery_message, discovery_signature = _mqtt_discovery_message(mqtt_settings)
+    messages = []
+
+    if discovery_message is not None and discovery_signature != _mqtt_last_discovery_signature:
+        logger.info("Publishing Home Assistant MQTT discovery to %s", discovery_message["topic"])
+        messages.append(discovery_message)
+
+    availability_topic = f"{topic}/availability"
+    messages.append({
+        "topic": availability_topic,
+        "payload": "online",
+        "qos": 1,
+        "retain": True,
+    })
+
+    if value is not None:
+        messages.append({
+            "topic": topic,
+            "payload": str(value),
+            "qos": min(2, max(0, _to_int(mqtt_settings.get("qos"), 0))),
+            "retain": _as_bool(mqtt_settings.get("retain")),
+        })
+
+    published_topics = ", ".join(message["topic"] for message in messages)
+    logger.debug(
+        "Publishing MQTT message(s) to %s on %s:%s (discovery=%s, retained_state=%s)",
+        published_topics,
+        host,
+        port,
+        bool(discovery_message is not None),
+        _as_bool(mqtt_settings.get("retain")),
+    )
     try:
-        mqtt_publish.single(
-            topic=topic,
-            payload=str(value),
-            hostname=host,
-            port=max(1, _to_int(mqtt_settings.get("port"), 1883)),
-            qos=min(2, max(0, _to_int(mqtt_settings.get("qos"), 0))),
-            retain=_as_bool(mqtt_settings.get("retain")),
-            auth=auth,
-            client_id=str(mqtt_settings.get("clientId") or ""),
-            keepalive=10,
-        )
+        _publish_mqtt_batch(messages, mqtt_settings)
+        if discovery_message is not None:
+            _mqtt_last_discovery_signature = discovery_signature
+        logger.info("MQTT publish succeeded for %s", published_topics)
+        return True
     except Exception:
-        logger.exception("Failed to publish MQTT value")
+        logger.exception("Failed to publish MQTT message(s) to %s", published_topics)
+        return False
 
 
 def _build_processing_config(config, settings):
@@ -475,6 +613,17 @@ def put_settings():
         return jsonify({"error": "Invalid JSON"}), 400
     settings = _normalize_settings(data)
     _save_json(SETTINGS_PATH, settings)
+    mqtt_settings = settings.get("mqtt", {})
+    logger.info(
+        "Saved settings (mqtt_enabled=%s, mqtt_host=%s, mqtt_topic=%s, mqtt_discovery=%s, auto_read_interval=%s)",
+        _as_bool(mqtt_settings.get("enabled")),
+        str(mqtt_settings.get("host") or "").strip(),
+        str(mqtt_settings.get("topic") or "").strip(),
+        _as_bool(mqtt_settings.get("discoveryEnabled")),
+        _to_int(settings.get("autoReadIntervalSec"), 0),
+    )
+    if isinstance(mqtt_settings, dict) and mqtt_settings.get("enabled"):
+        _publish_mqtt_messages(mqtt_settings)
     if _to_int(settings.get("autoReadIntervalSec"), 0) > 0:
         _ensure_auto_reader_started()
     return jsonify({"status": "ok"})
@@ -533,6 +682,7 @@ def post_read_test():
 
 
 if __name__ == "__main__":
+    _configure_logging()
     # Pre-load OCR model at startup so the first request isn't slow
     get_ocr(_settings_ocr_lang(_load_settings()))
     port = int(os.environ.get("PORT", 5000))

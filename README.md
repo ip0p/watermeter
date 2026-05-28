@@ -97,6 +97,8 @@ cat <<'JSON' | sudo tee /opt/watermeter-data/settings.json >/dev/null
     "host": "mqtt.local",
     "port": 1883,
     "topic": "watermeter/value",
+    "discoveryEnabled": true,
+    "discoveryPrefix": "homeassistant",
     "username": "",
     "password": "",
     "qos": 0,
@@ -110,6 +112,7 @@ echo "12345.0000" | sudo tee /opt/watermeter-data/value.txt >/dev/null
 
 Replace `12345.0000` with your current real meter value.
 Use a numeric value; decimals are optional, and if used, separate them with a dot (for example `12345`, `12345.1`, or `12345.1234`).
+When MQTT is enabled, the app now also publishes a retained Home Assistant MQTT discovery config by default so the sensor appears automatically in Home Assistant.
 
 6. Open `http://<your-server>:5000`, then check/save **Settings** and **Processor Config**.
 7. Test with **Read Now** or via API:
