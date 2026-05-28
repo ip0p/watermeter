@@ -473,7 +473,7 @@ class ImageProcessor:
             pointer_pixels = white_pixels[white_pixel_labels == best_component_label]
 
         distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
-        # Use the outer-most ~8% of pointer pixels and average them to reduce jitter from single-pixel noise.
+        # Use the outermost ~8% of pointer pixels and average them to reduce jitter from single-pixel noise.
         tip_distance_threshold = float(np.max(distances)) * DIAL_POINTER_TIP_DISTANCE_RATIO
         tip_pixels = pointer_pixels[distances >= tip_distance_threshold]
         if len(tip_pixels) == 0:
