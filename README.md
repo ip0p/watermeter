@@ -1,6 +1,6 @@
-# 💧 WaterMeter (EasyOCR Edition)
+# 💧 WaterMeter (PaddleOCR Edition)
 
-A **water meter reader** inspired by https://github.com/nohn/watermeter that uses **EasyOCR** (instead of Tesseract) to recognize digits on analog water meters. EasyOCR offers improved accuracy and robustness for digit recognition.
+A **water meter reader** inspired by https://github.com/nohn/watermeter that uses **PaddleOCR** (instead of Tesseract) to recognize digits on analog water meters.
 
 This project processes an image of your water meter, crops and corrects it based on a configuration file, extracts the relevant digit and analog fields, and produces a reliable reading with built-in sanity checks.
 
@@ -8,7 +8,7 @@ This project processes an image of your water meter, crops and corrects it based
 
 ## 🚀 Features
 
-* 🧠 Uses **EasyOCR** for digit recognition (better than Tesseract for uneven lighting or low contrast).
+* 🧠 Uses **PaddleOCR** for digit recognition (better than Tesseract for uneven lighting or low contrast).
 * 🔄 **Context-Aware Parsing:** Combines OCR results with analog dial analysis to auto-correct small visual or mechanical errors between integer and decimal parts.
 * 🔍 Supports **cropping and rotation** of the image to isolate the meter area.
 * ⚙️ Configurable for different meter layouts via a JSON config file.
@@ -89,7 +89,7 @@ cat <<'JSON' | sudo tee /opt/watermeter-data/settings.json >/dev/null
 {
   "imageUrl": "http://camera/snapshot.jpg",
   "maxThreshold": 0.2,
-  "easyOcrModel": "standard",
+  "paddleOcrLang": "en",
   "darkMode": false,
   "autoReadIntervalSec": 0,
   "mqtt": {
@@ -127,7 +127,7 @@ curl -X POST http://<your-server>:5000/api/read \
 Open `http://localhost:5000` to access the web UI:
 
 * **Dashboard** — Shows the current reading and a "Read Now" button. Displays the annotated debug image after each read.
-* **Settings** — Configure image URL, threshold, EasyOCR model, dark mode, auto-read interval, and MQTT publishing.
+* **Settings** — Configure image URL, threshold, PaddleOCR language, dark mode, auto-read interval, and MQTT publishing.
 * **Processor Config** — Edit `config.json` directly in the browser, use the built-in image editor (draw a rectangle on the image, pick target/index, apply selection), and run **Test recognition** to see what was detected per digit/dial.
 
 ---
@@ -211,9 +211,9 @@ Create a file named `config.json` based off the [configuration example in this r
 
 ---
 
-## 🧠 OCR Engine: EasyOCR
+## 🧠 OCR Engine: PaddleOCR
 
-This version uses [**EasyOCR**](https://github.com/JaidedAI/EasyOCR), which is built on PyTorch and provides:
+This version uses [**PaddleOCR**](https://github.com/PaddlePaddle/PaddleOCR), which provides:
 
 * Better character recognition under poor lighting
 * Support for multiple fonts and rotated digits

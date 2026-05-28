@@ -32,7 +32,7 @@ DEFAULT_MAX_THRESHOLD = 0.2
 DEFAULT_SETTINGS = {
     "imageUrl": "",
     "maxThreshold": DEFAULT_MAX_THRESHOLD,
-    "easyOcrModel": "standard",
+    "paddleOcrLang": "en",
     "darkMode": False,
     "autoReadIntervalSec": 0,
     "mqtt": {
@@ -47,6 +47,21 @@ DEFAULT_SETTINGS = {
         "clientId": "",
     },
 }
+
+
+def _normalize_ocr_lang(value):
+    normalized = str(value or "en").strip().lower() or "en"
+    if normalized in ("standard", "english", "english_g2"):
+        return "en"
+    return normalized
+
+
+def _settings_ocr_lang(settings: dict):
+    if not isinstance(settings, dict):
+        return "en"
+    if "paddleOcrLang" in settings:
+        return _normalize_ocr_lang(settings.get("paddleOcrLang"))
+    return _normalize_ocr_lang(settings.get("easyOcrModel"))
 
 DEFAULT_CONFIG = {
     "sanity": {
@@ -99,6 +114,7 @@ def _load_settings():
     settings = copy.deepcopy(DEFAULT_SETTINGS)
     if isinstance(loaded, dict):
         settings.update({k: v for k, v in loaded.items() if k != "mqtt"})
+        settings["paddleOcrLang"] = _settings_ocr_lang(loaded)
         mqtt_defaults = copy.deepcopy(DEFAULT_SETTINGS["mqtt"])
         loaded_mqtt = loaded.get("mqtt") if isinstance(loaded.get("mqtt"), dict) else {}
         mqtt_defaults.update(loaded_mqtt)
@@ -138,7 +154,9 @@ def _normalize_settings(data):
     if "maxThreshold" in data:
         settings["maxThreshold"] = _to_float(data.get("maxThreshold"), DEFAULT_MAX_THRESHOLD)
     if "easyOcrModel" in data:
-        settings["easyOcrModel"] = str(data.get("easyOcrModel") or "standard").strip() or "standard"
+        settings["paddleOcrLang"] = _normalize_ocr_lang(data.get("easyOcrModel"))
+    if "paddleOcrLang" in data:
+        settings["paddleOcrLang"] = _normalize_ocr_lang(data.get("paddleOcrLang"))
     if "darkMode" in data:
         settings["darkMode"] = _as_bool(data.get("darkMode"))
     if "autoReadIntervalSec" in data:
@@ -289,7 +307,7 @@ def _run_processing(image_url, config, previous, settings, debug_path):
     if fetch_error:
         return None, fetch_error, status_code
     try:
-        ip = ImageProcessor(image_bytes, config, ocr_model=settings.get("easyOcrModel"))
+        ip = ImageProcessor(image_bytes, config, ocr_model=_settings_ocr_lang(settings))
         details = ip.process_with_details(previous, debug=debug_path)
         return details, None, None
     except ValueError:
@@ -516,6 +534,6 @@ def post_read_test():
 
 if __name__ == "__main__":
     # Pre-load OCR model at startup so the first request isn't slow
-    get_ocr(_load_settings().get("easyOcrModel"))
+    get_ocr(_settings_ocr_lang(_load_settings()))
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)

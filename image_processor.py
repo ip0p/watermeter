@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageEnhance, ImageDraw
 import json
-import easyocr
+from paddleocr import PaddleOCR
 
 ocr_readers = {}
 DIAL_POINTER_CENTER_TOLERANCE_RATIO = 0.08
@@ -15,11 +15,23 @@ DIAL_POINTER_DILATION_KERNEL = np.ones(
     dtype=np.uint8,
 )
 
-def get_ocr(model: str | None = None):
-    model_name = (model or "standard").strip() or "standard"
-    if model_name not in ocr_readers:
-        ocr_readers[model_name] = easyocr.Reader(["en"], gpu=False, recog_network=model_name)
-    return ocr_readers[model_name]
+def _normalize_ocr_language(language: str | None = None) -> str:
+    normalized = (language or "en").strip().lower() or "en"
+    if normalized in ("standard", "english", "english_g2"):
+        return "en"
+    return normalized
+
+
+def get_ocr(language: str | None = None):
+    language_code = _normalize_ocr_language(language)
+    if language_code not in ocr_readers:
+        ocr_readers[language_code] = PaddleOCR(
+            use_angle_cls=False,
+            lang=language_code,
+            use_gpu=False,
+            show_log=False,
+        )
+    return ocr_readers[language_code]
 
 class ImageProcessor:
     def __init__(self, image_source, config_source, ocr_model: str | None = None):
@@ -45,7 +57,7 @@ class ImageProcessor:
 
         if self.img is None:
             raise ValueError("Image not found")
-        self.ocr_model = (ocr_model or "standard").strip() or "standard"
+        self.ocr_model = _normalize_ocr_language(ocr_model)
 
     def process(self, previous_value: None | float = None, debug: str | None = None) -> float:
         return self.process_with_details(previous_value=previous_value, debug=debug)["value"]
@@ -183,6 +195,36 @@ class ImageProcessor:
                     best_confidence = confidence
             return best_digit, best_confidence
 
+        def run_ocr(candidate_image):
+            result = get_ocr(self.ocr_model).ocr(candidate_image, det=False, rec=True, cls=False)
+            flattened = []
+            if not isinstance(result, list):
+                return flattened
+            for block in result:
+                if isinstance(block, tuple):
+                    block = [block]
+                if not isinstance(block, list):
+                    continue
+                for candidate in block:
+                    if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
+                        continue
+                    if isinstance(candidate[0], str):
+                        text = candidate[0]
+                        confidence = candidate[1]
+                    elif (
+                        isinstance(candidate[1], (list, tuple))
+                        and len(candidate[1]) >= 2
+                        and isinstance(candidate[1][0], str)
+                    ):
+                        text = candidate[1][0]
+                        confidence = candidate[1][1]
+                    else:
+                        continue
+                    if not isinstance(confidence, (int, float)):
+                        confidence = float("-inf")
+                    flattened.append([None, text, confidence])
+            return flattened
+
         def build_fallback_images(candidate_image):
             bordered = cv2.copyMakeBorder(
                 candidate_image,
@@ -243,7 +285,7 @@ class ImageProcessor:
             best_method = None
 
             for method, candidate_image in ocr_candidates:
-                text = get_ocr(self.ocr_model).readtext(candidate_image, allowlist="0123456789")
+                text = run_ocr(candidate_image)
                 candidate_digit, confidence = extract_single_digit(text)
                 if candidate_digit is not None and confidence > best_confidence:
                     best_digit = candidate_digit
@@ -255,7 +297,7 @@ class ImageProcessor:
             if best_digit is None:
                 for method, candidate_image in ocr_candidates:
                     for fallback_suffix, fallback_image in build_fallback_images(candidate_image):
-                        text = get_ocr(self.ocr_model).readtext(fallback_image, allowlist="0123456789")
+                        text = run_ocr(fallback_image)
                         candidate_digit, confidence = extract_single_digit(text)
                         if candidate_digit is not None and confidence > best_confidence:
                             best_digit = candidate_digit
