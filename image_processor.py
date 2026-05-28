@@ -10,6 +10,7 @@ ocr_readers = {}
 DIAL_POINTER_CENTER_TOLERANCE_RATIO = 0.08
 DIAL_POINTER_CENTER_TOLERANCE_MIN_PX = 3
 DIAL_POINTER_DILATION_KERNEL_SIZE = 3
+DIAL_POINTER_TIP_DISTANCE_RATIO = 0.92
 DIAL_POINTER_DILATION_KERNEL = np.ones(
     (DIAL_POINTER_DILATION_KERNEL_SIZE, DIAL_POINTER_DILATION_KERNEL_SIZE),
     dtype=np.uint8,
@@ -472,7 +473,8 @@ class ImageProcessor:
             pointer_pixels = white_pixels[white_pixel_labels == best_component_label]
 
         distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
-        tip_distance_threshold = float(np.max(distances)) * 0.92
+        # Use the outer-most ~8% of pointer pixels and average them to reduce jitter from single-pixel noise.
+        tip_distance_threshold = float(np.max(distances)) * DIAL_POINTER_TIP_DISTANCE_RATIO
         tip_pixels = pointer_pixels[distances >= tip_distance_threshold]
         if len(tip_pixels) == 0:
             tip_pixels = pointer_pixels[[np.argmax(distances)]]
