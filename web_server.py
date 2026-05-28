@@ -28,7 +28,6 @@ def _configure_logging():
         )
 
 
-_configure_logging()
 app = Flask(__name__, static_folder="static", static_url_path="")
 logger = logging.getLogger(__name__)
 
@@ -683,6 +682,7 @@ def post_read_test():
 
 
 if __name__ == "__main__":
+    _configure_logging()
     # Pre-load OCR model at startup so the first request isn't slow
     get_ocr(_settings_ocr_lang(_load_settings()))
     port = int(os.environ.get("PORT", 5000))
