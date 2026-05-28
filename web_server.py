@@ -19,9 +19,18 @@ except ImportError:  # pragma: no cover - optional dependency at runtime
 
 from image_processor import ImageProcessor, get_ocr
 
+
+def _configure_logging():
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+        )
+
+
+_configure_logging()
 app = Flask(__name__, static_folder="static", static_url_path="")
 logger = logging.getLogger(__name__)
-logger.setLevel(getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO))
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 ALLOW_PRIVATE_URLS = os.environ.get("ALLOW_PRIVATE_URLS", "").lower() in ("1", "true", "yes")
@@ -29,6 +38,7 @@ CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
 VALUE_PATH = os.path.join(DATA_DIR, "value.txt")
 DEFAULT_MQTT_DISCOVERY_PREFIX = "homeassistant"
+MQTT_DEVICE_MANUFACTURER = "ip0p"
 
 DEFAULT_MAX_THRESHOLD = 0.2
 
@@ -292,6 +302,8 @@ _mqtt_last_discovery_signature = None
 
 def _sanitize_mqtt_identifier(value, fallback):
     identifier = re.sub(r"[^a-zA-Z0-9_]+", "_", str(value or "").strip().lower()).strip("_")
+    if not identifier:
+        logger.warning("Falling back to default MQTT identifier '%s' for value %r", fallback, value)
     return identifier or fallback
 
 
@@ -323,8 +335,10 @@ def _mqtt_discovery_message(mqtt_settings):
         return None, None
 
     device_name = _mqtt_device_name(mqtt_settings)
+    topic_parts = [part for part in topic.split("/") if part]
+    topic_identifier_source = "/".join(topic_parts[-2:]) if topic_parts else topic
     discovery_id = _sanitize_mqtt_identifier(
-        str(mqtt_settings.get("clientId") or "").strip() or topic,
+        str(mqtt_settings.get("clientId") or "").strip() or topic_identifier_source,
         "watermeter_value",
     )
     entity_id = f"{discovery_id}_value"
@@ -339,7 +353,7 @@ def _mqtt_discovery_message(mqtt_settings):
         "icon": "mdi:water",
         "device": {
             "identifiers": [discovery_id],
-            "manufacturer": "ip0p",
+            "manufacturer": MQTT_DEVICE_MANUFACTURER,
             "model": "watermeter",
             "name": device_name,
         },
@@ -400,7 +414,7 @@ def _publish_mqtt_messages(mqtt_settings, value=None):
         })
 
     published_topics = ", ".join(message["topic"] for message in messages)
-    logger.info(
+    logger.debug(
         "Publishing MQTT message(s) to %s on %s:%s (discovery=%s, retained_state=%s)",
         published_topics,
         host,
