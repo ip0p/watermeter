@@ -10,6 +10,7 @@ ocr_readers = {}
 DIAL_POINTER_CENTER_TOLERANCE_RATIO = 0.08
 DIAL_POINTER_CENTER_TOLERANCE_MIN_PX = 3
 DIAL_POINTER_DILATION_KERNEL_SIZE = 3
+DIAL_POINTER_TIP_DISTANCE_RATIO = 0.92
 DIAL_POINTER_DILATION_KERNEL = np.ones(
     (DIAL_POINTER_DILATION_KERNEL_SIZE, DIAL_POINTER_DILATION_KERNEL_SIZE),
     dtype=np.uint8,
@@ -153,10 +154,11 @@ class ImageProcessor:
                 err = e
 
         selected_decimal_digits = decimal_digits
-        # Treat placeholders like "??" as "no valid decimal OCR result" so analog fallback can be used.
-        if selected_decimal_digits is not None and not any(c.isdigit() for c in selected_decimal_digits):
-            selected_decimal_digits = None
-        if selected_decimal_digits is None and analog_digits is not None:
+        has_decimal_noise = (
+            selected_decimal_digits is not None
+            and any(not c.isdigit() for c in selected_decimal_digits)
+        )
+        if (selected_decimal_digits is None or has_decimal_noise) and analog_digits is not None:
             selected_decimal_digits = analog_digits
             decimal_source = "decimal_analogs"
 
@@ -471,8 +473,12 @@ class ImageProcessor:
             pointer_pixels = white_pixels[white_pixel_labels == best_component_label]
 
         distances = np.sqrt((pointer_pixels[:, 1] - cx) ** 2 + (pointer_pixels[:, 0] - cy) ** 2)
-        furthest_idx = np.argmax(distances)
-        py, px = pointer_pixels[furthest_idx]
+        # Use the outermost ~8% of pointer pixels and average them to reduce jitter from single-pixel noise.
+        tip_distance_threshold = float(np.max(distances)) * DIAL_POINTER_TIP_DISTANCE_RATIO
+        tip_pixels = pointer_pixels[distances >= tip_distance_threshold]
+        if len(tip_pixels) == 0:
+            tip_pixels = pointer_pixels[[np.argmax(distances)]]
+        py, px = np.round(np.mean(tip_pixels, axis=0)).astype(int)
         pdx = px - cx
         pdy = py - cy
         angle = (math.degrees(math.atan2(pdy, pdx)) + 90) % 360
