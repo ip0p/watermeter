@@ -16,7 +16,7 @@ DIAL_POINTER_DILATION_KERNEL = np.ones(
 )
 
 def _normalize_ocr_language(language: str | None = None) -> str:
-    normalized = (language or "en").strip().lower() or "en"
+    normalized = (language or "en").strip().lower()
     if normalized in ("standard", "english", "english_g2"):
         return "en"
     return normalized
@@ -32,6 +32,36 @@ def get_ocr(language: str | None = None):
             show_log=False,
         )
     return ocr_readers[language_code]
+
+
+def _normalize_paddleocr_result(result):
+    flattened = []
+    if not isinstance(result, list):
+        return flattened
+    for block in result:
+        if isinstance(block, tuple):
+            block = [block]
+        if not isinstance(block, list):
+            continue
+        for candidate in block:
+            if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
+                continue
+            if isinstance(candidate[0], str):
+                text = candidate[0]
+                confidence = candidate[1]
+            elif (
+                isinstance(candidate[1], (list, tuple))
+                and len(candidate[1]) >= 2
+                and isinstance(candidate[1][0], str)
+            ):
+                text = candidate[1][0]
+                confidence = candidate[1][1]
+            else:
+                continue
+            if not isinstance(confidence, (int, float)):
+                confidence = 0.0
+            flattened.append([None, text, confidence])
+    return flattened
 
 class ImageProcessor:
     def __init__(self, image_source, config_source, ocr_model: str | None = None):
@@ -197,33 +227,7 @@ class ImageProcessor:
 
         def run_ocr(candidate_image):
             result = get_ocr(self.ocr_model).ocr(candidate_image, det=False, rec=True, cls=False)
-            flattened = []
-            if not isinstance(result, list):
-                return flattened
-            for block in result:
-                if isinstance(block, tuple):
-                    block = [block]
-                if not isinstance(block, list):
-                    continue
-                for candidate in block:
-                    if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
-                        continue
-                    if isinstance(candidate[0], str):
-                        text = candidate[0]
-                        confidence = candidate[1]
-                    elif (
-                        isinstance(candidate[1], (list, tuple))
-                        and len(candidate[1]) >= 2
-                        and isinstance(candidate[1][0], str)
-                    ):
-                        text = candidate[1][0]
-                        confidence = candidate[1][1]
-                    else:
-                        continue
-                    if not isinstance(confidence, (int, float)):
-                        confidence = float("-inf")
-                    flattened.append([None, text, confidence])
-            return flattened
+            return _normalize_paddleocr_result(result)
 
         def build_fallback_images(candidate_image):
             bordered = cv2.copyMakeBorder(

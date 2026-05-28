@@ -50,7 +50,7 @@ DEFAULT_SETTINGS = {
 
 
 def _normalize_ocr_lang(value):
-    normalized = str(value or "en").strip().lower() or "en"
+    normalized = str(value or "en").strip().lower()
     if normalized in ("standard", "english", "english_g2"):
         return "en"
     return normalized
