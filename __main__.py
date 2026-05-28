@@ -48,7 +48,7 @@ def main():
 
     subparsers = parser.add_subparsers(title="actions", dest="command", required=True, description="Action to perform")
 
-    action_init = subparsers.add_parser("init", help="Performs initial setup (downloading detection model)")
+    action_init = subparsers.add_parser("init", help="Performs initial setup (downloading OCR model)")
     action_init.set_defaults(func=do_init)
 
     action_run = subparsers.add_parser("run", help="Perform a once-off operation")

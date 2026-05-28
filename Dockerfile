@@ -17,16 +17,12 @@ ENV PATH="/opt/venv/bin:${PATH}"
 
 COPY requirements.txt .
 
-# Install CPU-only PyTorch wheels to avoid CUDA dependencies.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-      --index-url https://download.pytorch.org/whl/cpu \
-      torch torchvision && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Download EasyOCR detection models at build time.
+# Download PaddleOCR models at build time.
 RUN python __main__.py init
 
 FROM python:3.11-slim

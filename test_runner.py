@@ -31,7 +31,12 @@ class TestImagesInTests(unittest.TestCase):
                 with open(previous_value_path, "r") as f:
                     previous_value = float(f.read())
             ip = ImageProcessor(image_path, last_valid_config)
-            value = ip.process(previous_value)
+            try:
+                value = ip.process(previous_value)
+            except RuntimeError as exc:
+                if "Download from" in str(exc) and "failed. Retry limit reached" in str(exc):
+                    self.skipTest("PaddleOCR model download unavailable in this environment")
+                raise
             with open(result_path, "r") as result_file:
                 result = float(result_file.read())
             self.assertEqual(result, value, msg=f"image {image}")
@@ -112,11 +117,11 @@ class TestDigitExtractionRobustness(unittest.TestCase):
     def test_prefers_highest_confidence_single_digit_candidate(self):
         ip = self._build_processor()
         mock_reader = mock.Mock()
-        mock_reader.readtext.return_value = [
-            [None, "?", 0.99],
-            [None, "4", 0.80],
-            [None, "8", 0.20],
-        ]
+        mock_reader.ocr.return_value = [[
+            ("?", 0.99),
+            ("4", 0.80),
+            ("8", 0.20),
+        ]]
 
         with mock.patch("image_processor.get_ocr", return_value=mock_reader):
             value = ip.process()
@@ -126,9 +131,9 @@ class TestDigitExtractionRobustness(unittest.TestCase):
     def test_accepts_digit_embedded_in_single_character_noise(self):
         ip = self._build_processor()
         mock_reader = mock.Mock()
-        mock_reader.readtext.return_value = [
-            [None, "7.", 0.90],
-        ]
+        mock_reader.ocr.return_value = [[
+            ("7.", 0.90),
+        ]]
 
         with mock.patch("image_processor.get_ocr", return_value=mock_reader):
             value = ip.process()
@@ -138,11 +143,11 @@ class TestDigitExtractionRobustness(unittest.TestCase):
     def test_invalid_candidates_fall_back_to_zero(self):
         ip = self._build_processor()
         mock_reader = mock.Mock()
-        mock_reader.readtext.return_value = [
-            [None, "??", 0.90],
-            [None, "", 0.80],
-            [None, "AB", 0.70],
-        ]
+        mock_reader.ocr.return_value = [[
+            ("??", 0.90),
+            ("", 0.80),
+            ("AB", 0.70),
+        ]]
 
         with mock.patch("image_processor.get_ocr", return_value=mock_reader):
             value = ip.process()
@@ -158,12 +163,12 @@ class TestDigitExtractionRobustness(unittest.TestCase):
         low_confidence = 0.40
         recovered_confidence = 0.94
 
-        def readtext_side_effect(image, allowlist=None):
+        def ocr_side_effect(image, det=False, rec=True, cls=False):
             if image.shape[0] >= min_scaled_dimension and image.shape[1] >= min_scaled_dimension:
-                return [[None, "9", recovered_confidence]]
-            return [[None, "??", low_confidence]]
+                return [[("9", recovered_confidence)]]
+            return [[("??", low_confidence)]]
 
-        mock_reader.readtext.side_effect = readtext_side_effect
+        mock_reader.ocr.side_effect = ocr_side_effect
 
         with mock.patch("image_processor.get_ocr", return_value=mock_reader):
             details = ip.process_with_details()
@@ -180,12 +185,12 @@ class TestDigitExtractionRobustness(unittest.TestCase):
         low_confidence = 0.40
         recovered_confidence = 0.95
 
-        def readtext_side_effect(image, allowlist=None):
+        def ocr_side_effect(image, det=False, rec=True, cls=False):
             if image.shape[0] >= min_three_x_scaled_dimension and image.shape[1] >= min_three_x_scaled_dimension:
-                return [[None, "8", recovered_confidence]]
-            return [[None, "??", low_confidence]]
+                return [[("8", recovered_confidence)]]
+            return [[("??", low_confidence)]]
 
-        mock_reader.readtext.side_effect = readtext_side_effect
+        mock_reader.ocr.side_effect = ocr_side_effect
 
         with mock.patch("image_processor.get_ocr", return_value=mock_reader):
             details = ip.process_with_details()

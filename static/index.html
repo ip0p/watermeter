@@ -27,7 +27,7 @@
 <body>
 <div class="container py-4">
   <h1 class="mb-1">💧 WaterMeter</h1>
-  <p class="text-muted mb-4">Water meter reading via EasyOCR</p>
+  <p class="text-muted mb-4">Water meter reading via PaddleOCR</p>
 
   <div id="alertBox" class="alert" role="alert"></div>
 
@@ -85,9 +85,9 @@
             <div class="form-text">Maximum allowed increase between two consecutive readings.</div>
           </div>
           <div class="mb-3">
-            <label class="form-label">EasyOCR model</label>
-            <input type="text" class="form-control" id="easyOcrModel" placeholder="standard" />
-            <div class="form-text">Recognition network name (for example: standard, english_g2).</div>
+            <label class="form-label">PaddleOCR language</label>
+            <input type="text" class="form-control" id="paddleOcrLang" placeholder="en" />
+            <div class="form-text">Language code (for example: en, de, fr).</div>
           </div>
           <div class="mb-3">
             <label class="form-label">Auto read interval (seconds)</label>
@@ -488,7 +488,7 @@
       const d = await r.json();
       document.getElementById("imageUrl").value = d.imageUrl || "";
       document.getElementById("maxThreshold").value = d.maxThreshold ?? 0.2;
-      document.getElementById("easyOcrModel").value = d.easyOcrModel || "standard";
+      document.getElementById("paddleOcrLang").value = d.paddleOcrLang || d.easyOcrModel || "en";
       document.getElementById("autoReadIntervalSec").value = d.autoReadIntervalSec ?? 0;
       document.getElementById("darkMode").checked = !!d.darkMode;
       applyTheme(!!d.darkMode);
@@ -511,7 +511,7 @@
     const payload = {
       imageUrl: document.getElementById("imageUrl").value.trim(),
       maxThreshold: parseFloat(document.getElementById("maxThreshold").value),
-      easyOcrModel: document.getElementById("easyOcrModel").value.trim() || "standard",
+      paddleOcrLang: document.getElementById("paddleOcrLang").value.trim() || "en",
       autoReadIntervalSec: Math.max(0, parseInt(document.getElementById("autoReadIntervalSec").value || "0", 10)),
       darkMode: document.getElementById("darkMode").checked,
       mqtt: {
