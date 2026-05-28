@@ -349,6 +349,9 @@ def _mqtt_discovery_message(mqtt_settings):
         "availability_topic": availability_topic,
         "payload_available": "online",
         "payload_not_available": "offline",
+        "unit_of_measurement": "m³",
+        "device_class": "water",
+        "state_class": "total_increasing",
         "icon": "mdi:water",
         "device": {
             "identifiers": [discovery_id],
