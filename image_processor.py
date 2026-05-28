@@ -153,10 +153,11 @@ class ImageProcessor:
                 err = e
 
         selected_decimal_digits = decimal_digits
-        # Treat any non-digit decimal OCR output as invalid so analog fallback can be used.
-        if selected_decimal_digits is not None and not selected_decimal_digits.isdigit():
-            selected_decimal_digits = None
-        if selected_decimal_digits is None and analog_digits is not None:
+        has_decimal_noise = (
+            selected_decimal_digits is not None
+            and any(not c.isdigit() for c in selected_decimal_digits)
+        )
+        if (selected_decimal_digits is None or has_decimal_noise) and analog_digits is not None:
             selected_decimal_digits = analog_digits
             decimal_source = "decimal_analogs"
 
