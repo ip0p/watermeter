@@ -62,6 +62,13 @@
               <span id="btnReadSpinner" class="spinner-border spinner-border-sm d-none me-2"></span>
               Read Now
             </button>
+            <hr class="my-3" />
+            <div class="d-flex gap-2 justify-content-center align-items-center">
+              <input type="number" class="form-control form-control-sm" id="setValueInput"
+                     step="0.0001" min="0" placeholder="e.g. 123.4567" style="max-width:160px" />
+              <button class="btn btn-sm btn-secondary" onclick="doSetValue()">Set Value</button>
+              <button class="btn btn-sm btn-danger" onclick="doResetValue()">Reset</button>
+            </div>
           </div>
         </div>
         <div class="col-md-6">
@@ -591,7 +598,49 @@
     } catch (e) { showAlert("Save failed: " + e.message); }
   }
 
-  async function doRead() {
+  async function doSetValue() {
+    const input = document.getElementById("setValueInput");
+    const v = parseFloat(input.value);
+    if (isNaN(v) || v < 0) {
+      showAlert("Please enter a valid non-negative number.");
+      return;
+    }
+    try {
+      const r = await fetch("/api/value", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: v }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        showAlert("Error: " + (d.error || r.statusText));
+      } else {
+        document.getElementById("currentValue").textContent = d.value.toFixed(4);
+        input.value = "";
+        showAlert(`Value set to ${d.value.toFixed(4)} m³`, "success");
+      }
+    } catch (e) {
+      showAlert("Request failed: " + e);
+    }
+  }
+
+  async function doResetValue() {
+    if (!confirm("Reset the stored value? The next automatic read will accept any reading.")) return;
+    try {
+      const r = await fetch("/api/value", { method: "DELETE" });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        showAlert("Error: " + (d.error || r.statusText));
+      } else {
+        document.getElementById("currentValue").textContent = "—";
+        showAlert("Value reset. The next reading will be accepted without comparison.", "success");
+      }
+    } catch (e) {
+      showAlert("Request failed: " + e);
+    }
+  }
+
+
     const btn = document.getElementById("btnRead");
     const spinner = document.getElementById("btnReadSpinner");
     btn.disabled = true;

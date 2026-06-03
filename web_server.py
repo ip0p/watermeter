@@ -642,6 +642,33 @@ def get_value():
     return jsonify({"value": value})
 
 
+@app.put("/api/value")
+def put_value():
+    data = request.get_json(force=True, silent=True) or {}
+    v = data.get("value")
+    if v is None:
+        return jsonify({"error": "Missing 'value' field"}), 400
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return jsonify({"error": "'value' must be a number"}), 400
+    if v < 0:
+        return jsonify({"error": "'value' must not be negative"}), 400
+    _save_value(v)
+    settings = _load_settings()
+    _publish_mqtt_value(v, settings)
+    logger.info("Value manually set to %s", v)
+    return jsonify({"value": v})
+
+
+@app.delete("/api/value")
+def delete_value():
+    if os.path.exists(VALUE_PATH):
+        os.remove(VALUE_PATH)
+    logger.info("Stored value reset")
+    return jsonify({"status": "ok"})
+
+
 # ---------------------------------------------------------------------------
 # Read endpoint
 # ---------------------------------------------------------------------------
