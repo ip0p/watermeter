@@ -8,6 +8,7 @@ import re
 import socket
 import threading
 import time
+from itertools import combinations, product
 from urllib.parse import urlparse
 
 import requests
@@ -459,6 +460,131 @@ def _run_processing(image_url, config, previous, settings, debug_path):
         return None, "Image processing failed — check server logs for details", 500
 
 
+def _autocorrect_reading(details, previous, max_threshold):
+    """
+    When a reading fails sanity checks (result too high or too low), attempt to
+    find a corrected reading by substituting individual digit values.
+
+    Strategy:
+    - Prioritise positions where OCR had alternative candidates (likely confused digits).
+    - Try single-digit substitutions first; fall back to two-digit if needed.
+    - Among valid in-range candidates, pick the one closest to `previous`.
+    - Limit to two-digit substitutions at most to avoid over-correction.
+
+    Returns (corrected_value, description_str) or (None, None).
+    """
+    digit_str = details.get("digits") or ""
+    decimal_used = details.get("decimal_used") or ""
+    digit_details = details.get("digit_details") or []
+    decimal_digit_details = details.get("decimal_digit_details") or []
+
+    if previous is None:
+        return None, None
+
+    target_low = previous
+    target_high = previous + max_threshold if max_threshold is not None else float("inf")
+
+    def make_value(int_digits, dec_digits):
+        int_san = "".join(c if c.isdigit() else "0" for c in int_digits)
+        val = float(int_san or "0")
+        if dec_digits:
+            dec_san = "".join(c if c.isdigit() else "0" for c in dec_digits)
+            val += float("0." + dec_san)
+        return val
+
+    # Build a flat list of positions, annotated with OCR alternatives and confidence.
+    # Integer digit positions first, then decimal, since integer digits have larger
+    # per-digit impact and are the more common source of large misreads (e.g. 3→9).
+    positions = []
+    for i, d in enumerate(digit_details):
+        if i >= len(digit_str):
+            break
+        alts = [a["digit"] for a in d.get("alternatives", [])]
+        positions.append({
+            "idx": i,
+            "is_dec": False,
+            "current": digit_str[i],
+            "alternatives": alts,
+            "confidence": d.get("confidence") if d.get("confidence") is not None else -1.0,
+        })
+    for i, d in enumerate(decimal_digit_details):
+        if i >= len(decimal_used):
+            break
+        alts = [a["digit"] for a in d.get("alternatives", [])]
+        positions.append({
+            "idx": i,
+            "is_dec": True,
+            "current": decimal_used[i],
+            "alternatives": alts,
+            "confidence": d.get("confidence") if d.get("confidence") is not None else -1.0,
+        })
+
+    # Sort by confidence ascending so we try least-confident positions first.
+    positions.sort(key=lambda p: p["confidence"])
+
+    def digit_options(pos):
+        """Return ordered list of substitute digits to try for a position.
+
+        OCR alternatives come first (the model already suggested them), then
+        all remaining digits in ascending order.
+        """
+        seen = {pos["current"]}
+        opts = []
+        for alt in pos["alternatives"]:
+            if alt not in seen:
+                opts.append(alt)
+                seen.add(alt)
+        for d in range(10):
+            s = str(d)
+            if s not in seen:
+                opts.append(s)
+                seen.add(s)
+        return opts
+
+    best_candidate = None
+    best_distance = float("inf")
+
+    def _try_combo(pos_list, digit_combo):
+        nonlocal best_candidate, best_distance
+        new_int = list(digit_str)
+        new_dec = list(decimal_used)
+        for pos, new_d in zip(pos_list, digit_combo):
+            if pos["is_dec"]:
+                new_dec[pos["idx"]] = new_d
+            else:
+                new_int[pos["idx"]] = new_d
+        candidate = make_value("".join(new_int), "".join(new_dec))
+        if target_low <= candidate <= target_high:
+            dist = abs(candidate - previous)
+            if dist < best_distance:
+                best_distance = dist
+                subs = [
+                    f"{'dec' if p['is_dec'] else 'int'}[{p['idx']}] {p['current']}→{d}"
+                    for p, d in zip(pos_list, digit_combo)
+                ]
+                best_candidate = (candidate, ", ".join(subs))
+
+    n = len(positions)
+
+    # 1-digit substitutions across all positions (in confidence order).
+    for i in range(n):
+        pos = positions[i]
+        for new_d in digit_options(pos):
+            _try_combo([pos], [new_d])
+
+    # If no single-digit fix found, try 2-digit combos among the least-confident half.
+    if best_candidate is None:
+        search_n = max(2, (n + 1) // 2)
+        for i, j in combinations(range(search_n), 2):
+            p1, p2 = positions[i], positions[j]
+            for d1, d2 in product(digit_options(p1), digit_options(p2)):
+                _try_combo([p1, p2], [d1, d2])
+
+    if best_candidate is not None:
+        return best_candidate
+    return None, None
+
+
 def _run_read_cycle(
     image_url_override=None,
     config_override=None,
@@ -484,18 +610,33 @@ def _run_read_cycle(
     max_threshold = settings.get("maxThreshold")
 
     if persist_value and previous is not None:
-        if result < previous:
-            return {
-                "error": f"Result {result} is less than previous {previous}",
-                "value": result,
-                "debugImage": _debug_image_data_url(debug_path),
-            }, "sanity", 422
-        if max_threshold is not None and result > previous + max_threshold:
-            return {
-                "error": f"Result {result} exceeds previous + {max_threshold}",
-                "value": result,
-                "debugImage": _debug_image_data_url(debug_path),
-            }, "sanity", 422
+        autocorrect_desc = None
+        if result < previous or (max_threshold is not None and result > previous + max_threshold):
+            corrected, autocorrect_desc = _autocorrect_reading(details, previous, max_threshold)
+            if corrected is not None:
+                logger.warning(
+                    "Autocorrected OCR reading %.4f → %.4f (previous=%.4f): %s",
+                    result,
+                    corrected,
+                    previous,
+                    autocorrect_desc,
+                )
+                result = corrected
+                details["value"] = corrected
+            elif result < previous:
+                return {
+                    "error": f"Result {result} is less than previous {previous}",
+                    "value": result,
+                    "debugImage": _debug_image_data_url(debug_path),
+                }, "sanity", 422
+            else:
+                return {
+                    "error": f"Result {result} exceeds previous + {max_threshold}",
+                    "value": result,
+                    "debugImage": _debug_image_data_url(debug_path),
+                }, "sanity", 422
+    else:
+        autocorrect_desc = None
 
     if persist_value:
         _save_value(result)
@@ -517,6 +658,9 @@ def _run_read_cycle(
             "analogDetails": details["analog_details"],
             "decimalSource": details["decimal_source"],
         })
+    if autocorrect_desc is not None:
+        payload["autocorrected"] = True
+        payload["autocorrectDescription"] = autocorrect_desc
 
     return payload, None, None
 
