@@ -485,11 +485,11 @@ def _autocorrect_reading(details, previous, max_threshold):
     target_high = previous + max_threshold if max_threshold is not None else float("inf")
 
     def make_value(int_digits, dec_digits):
-        int_san = "".join(c if c.isdigit() else "0" for c in int_digits)
-        val = float(int_san or "0")
+        sanitized_int = "".join(c if c.isdigit() else "0" for c in int_digits)
+        val = float(sanitized_int or "0")
         if dec_digits:
-            dec_san = "".join(c if c.isdigit() else "0" for c in dec_digits)
-            val += float("0." + dec_san)
+            sanitized_dec = "".join(c if c.isdigit() else "0" for c in dec_digits)
+            val += float("0." + sanitized_dec)
         return val
 
     # Build a flat list of positions, annotated with OCR alternatives and confidence.
@@ -622,7 +622,7 @@ def _run_read_cycle(
                     autocorrect_desc,
                 )
                 result = corrected
-                details["value"] = corrected
+                details["value"] = corrected  # update so callers see corrected value
             elif result < previous:
                 return {
                     "error": f"Result {result} is less than previous {previous}",
