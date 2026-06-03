@@ -210,8 +210,9 @@ class ImageProcessor:
         FALLBACK_EARLY_EXIT_CONFIDENCE = 0.9
 
         def extract_single_digit(ocr_result):
-            best_digit = None
-            best_confidence = float("-inf")
+            # Returns (best_digit, best_confidence, all_candidates_dict)
+            # where all_candidates_dict maps digit_str -> best_confidence seen.
+            all_candidates = {}
             for candidate in ocr_result:
                 if not isinstance(candidate, (list, tuple)) or len(candidate) < 2:
                     continue
@@ -222,10 +223,12 @@ class ImageProcessor:
                 if len(digits_only) != 1:
                     continue
                 confidence = candidate[2] if len(candidate) >= 3 and isinstance(candidate[2], (int, float)) else float("-inf")
-                if confidence > best_confidence:
-                    best_digit = digits_only
-                    best_confidence = confidence
-            return best_digit, best_confidence
+                if digits_only not in all_candidates or confidence > all_candidates[digits_only]:
+                    all_candidates[digits_only] = confidence
+            if not all_candidates:
+                return None, float("-inf"), {}
+            best_digit = max(all_candidates, key=all_candidates.__getitem__)
+            return best_digit, all_candidates[best_digit], all_candidates
 
         def run_ocr(candidate_image):
             result = get_ocr(self.ocr_model).ocr(candidate_image, det=False, rec=True, cls=False)
@@ -289,10 +292,14 @@ class ImageProcessor:
             best_digit = None
             best_confidence = float("-inf")
             best_method = None
+            all_seen_candidates = {}  # digit -> best confidence across all OCR attempts
 
             for method, candidate_image in ocr_candidates:
                 text = run_ocr(candidate_image)
-                candidate_digit, confidence = extract_single_digit(text)
+                candidate_digit, confidence, candidates = extract_single_digit(text)
+                for dig, conf in candidates.items():
+                    if dig not in all_seen_candidates or conf > all_seen_candidates[dig]:
+                        all_seen_candidates[dig] = conf
                 if candidate_digit is not None and confidence > best_confidence:
                     best_digit = candidate_digit
                     best_confidence = confidence
@@ -304,7 +311,10 @@ class ImageProcessor:
                 for method, candidate_image in ocr_candidates:
                     for fallback_suffix, fallback_image in build_fallback_images(candidate_image):
                         text = run_ocr(fallback_image)
-                        candidate_digit, confidence = extract_single_digit(text)
+                        candidate_digit, confidence, candidates = extract_single_digit(text)
+                        for dig, conf in candidates.items():
+                            if dig not in all_seen_candidates or conf > all_seen_candidates[dig]:
+                                all_seen_candidates[dig] = conf
                         if candidate_digit is not None and confidence > best_confidence:
                             best_digit = candidate_digit
                             best_confidence = confidence
@@ -324,8 +334,14 @@ class ImageProcessor:
                     "digit": "?",
                     "confidence": None,
                     "method": "none",
+                    "alternatives": [],
                 })
                 continue
+            alternatives = [
+                {"digit": dig, "confidence": float(conf)}
+                for dig, conf in sorted(all_seen_candidates.items(), key=lambda kv: kv[1], reverse=True)
+                if dig != best_digit
+            ]
             final_text += best_digit
             details.append({
                 "x": dx,
@@ -335,6 +351,7 @@ class ImageProcessor:
                 "digit": best_digit,
                 "confidence": float(best_confidence),
                 "method": best_method,
+                "alternatives": alternatives,
             })
 
         if with_details:
